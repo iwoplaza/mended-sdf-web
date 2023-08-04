@@ -1,6 +1,4 @@
-import { mat4, vec3 } from 'wgpu-matrix';
-import { projectionMatrixAtom } from './projection';
-import { store } from './store';
+import { mat3, mat4, vec3 } from 'wgpu-matrix';
 
 type GPUPresence = {
   readonly maxBufferSize: number;
@@ -10,8 +8,8 @@ export class Camera implements GPUPresence {
   constructor() {}
 
   get maxBufferSize() {
-    // Two 4x4 matrices, 4-byte elements
-    return 2 * 16 * 4;
+    // 4x4 matrix, 3x3 matrix, 4-byte elements
+    return 16 * 4 + 9 * 4;
   }
 
   writeToBuffer(device: GPUDevice, buffer: GPUBuffer, offset: number) {
@@ -23,12 +21,10 @@ export class Camera implements GPUPresence {
     const rotation = mat4.rotateY(mat4.translation(origin), rad);
     vec3.transformMat4(eyePosition, rotation, eyePosition);
 
-    const viewMatrix = mat4.inverse(mat4.lookAt(eyePosition, origin, upVector));
-    const projMatrix = store.get(projectionMatrixAtom);
-
-    const viewProjMatrix = mat4.multiply(
-      projMatrix,
-      viewMatrix,
+    const viewMatrix = mat4.lookAt(
+      eyePosition,
+      origin,
+      upVector,
     ) as Float32Array;
 
     // Writing to buffer
@@ -36,18 +32,18 @@ export class Camera implements GPUPresence {
     device.queue.writeBuffer(
       buffer,
       offset,
-      viewProjMatrix.buffer,
-      viewProjMatrix.byteOffset,
-      viewProjMatrix.byteLength,
+      viewMatrix.buffer,
+      viewMatrix.byteOffset,
+      viewMatrix.byteLength,
     );
 
-    const cameraInvViewProj = mat4.invert(viewProjMatrix) as Float32Array;
+    const normalViewMatrix = mat3.fromMat4(viewMatrix) as Float32Array;
     device.queue.writeBuffer(
       buffer,
       offset + 64,
-      cameraInvViewProj.buffer,
-      cameraInvViewProj.byteOffset,
-      cameraInvViewProj.byteLength,
+      normalViewMatrix.buffer,
+      normalViewMatrix.byteOffset,
+      normalViewMatrix.byteLength,
     );
   }
 }

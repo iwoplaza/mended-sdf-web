@@ -40,7 +40,7 @@ fn main_frag(
 
   let c = coord.xy / vec2<f32>(uniforms.canvasSize);
   // let c = coord.xy / vec2<f32>(512, 512);
-  if (c.x < 0.5) {
+  if (c.x < 0.33) {
     result = textureLoad(
       normalsAndDepth,
       vec2<i32>(floor(coord.xy)),
@@ -49,7 +49,21 @@ fn main_frag(
     result.x = (result.x + 1.0) * 0.5;
     result.y = (result.y + 1.0) * 0.5;
     result.z = (result.z + 1.0) * 0.5;
-  } else {
+    result.a = 1.0;
+  }
+  else if (c.x < 0.66) {
+    result = textureLoad(
+      normalsAndDepth,
+      vec2<i32>(floor(coord.xy)),
+      0
+    );
+    let depth = result.a;
+    result.x = depth;
+    result.y = depth;
+    result.z = depth;
+    result.a = 1.0;
+  }
+  else {
     result = textureLoad(
       blurredAndAlbedo,
       vec2<i32>(floor(coord.xy)),

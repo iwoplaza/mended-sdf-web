@@ -4,6 +4,8 @@ import renderMeshGBufferWGSL from './shaders/renderMeshGBuffer.wgsl?raw';
 import { Camera } from './camera';
 import { GBuffer } from './gBuffer';
 import { StanfordDragon } from './models/stanfordDragon';
+import { store } from './store';
+import { projectionMatrixAtom } from './projection';
 
 const vertexBufferLayouts: Iterable<GPUVertexBufferLayout> = [
   {
@@ -45,6 +47,12 @@ export class GBufferMeshRenderer {
     this.camera = new Camera();
     this.dragon = new StanfordDragon(device);
 
+    const depthTexture = device.createTexture({
+      size: [gBuffer.size[0], gBuffer.size[1]],
+      format: 'depth16unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
     this.passDescriptor = {
       colorAttachments: [
         {
@@ -62,6 +70,13 @@ export class GBufferMeshRenderer {
           storeOp: 'store',
         },
       ],
+      depthStencilAttachment: {
+        view: depthTexture.createView(),
+
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
     };
 
     const writeGBufferShader = device.createShaderModule({
@@ -79,16 +94,16 @@ export class GBufferMeshRenderer {
         module: writeGBufferShader,
         entryPoint: 'main_frag',
         targets: [
+          // albedo
+          { format: 'rgba8unorm' },
           // normal
           { format: 'rgba16float' },
-          // albedo
-          { format: 'bgra8unorm' },
         ],
       },
       depthStencil: {
         depthWriteEnabled: true,
         depthCompare: 'less',
-        format: 'depth24plus',
+        format: 'depth16unorm',
       },
       primitive: {
         topology: 'triangle-list',
@@ -101,8 +116,21 @@ export class GBufferMeshRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
+    const projectionUniformBuffer = device.createBuffer({
+      size: 4 * 16, // one 4x4 matrix
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    const projectionMatrix = store.get(projectionMatrixAtom) as Float32Array;
+    device.queue.writeBuffer(
+      projectionUniformBuffer,
+      0,
+      projectionMatrix.buffer,
+      projectionMatrix.byteOffset,
+      projectionMatrix.byteLength,
+    );
+
     this.cameraUniformBuffer = device.createBuffer({
-      size: 4 * 16 * 2, // two 4x4 matrix
+      size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -117,6 +145,12 @@ export class GBufferMeshRenderer {
         },
         {
           binding: 1,
+          resource: {
+            buffer: projectionUniformBuffer,
+          },
+        },
+        {
+          binding: 2,
           resource: {
             buffer: this.cameraUniformBuffer,
           },

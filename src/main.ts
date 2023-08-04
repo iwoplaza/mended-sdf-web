@@ -1,8 +1,9 @@
 import './style.css';
 
 import { GBuffer } from './gBuffer';
-import { GBufferStep } from './gBufferStep';
+// import { GBufferStep } from './gBufferStep';
 import { GBufferDebugger } from './gBufferDebugger';
+import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 
 async function main() {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -23,7 +24,8 @@ async function main() {
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 
   const gBuffer = new GBuffer(device, [canvas.width, canvas.height]);
-  const gBufferStep = new GBufferStep(device, gBuffer);
+  // const gBufferStep = new GBufferStep(device, gBuffer);
+  const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
   const gBufferDebugger = new GBufferDebugger(
     device,
     presentationFormat,
@@ -36,36 +38,11 @@ async function main() {
     alphaMode: 'premultiplied',
   });
 
-  // Create a sampler with linear filtering for smooth interpolation.
-  const sampler = device.createSampler({
-    magFilter: 'linear',
-    minFilter: 'linear',
-  });
-
-  // const uniformBindGroup = device.createBindGroup({
-  //   layout: pipeline.getBindGroupLayout(0),
-  //   entries: [
-  //     {
-  //       binding: 0,
-  //       resource: {
-  //         buffer: uniformBuffer,
-  //       },
-  //     },
-  //     {
-  //       binding: 1,
-  //       resource: sampler,
-  //     },
-  //     {
-  //       binding: 2,
-  //       resource: cubeTexture.createView(),
-  //     },
-  //   ],
-  // });
-
   function frame() {
     const commandEncoder = device.createCommandEncoder();
 
-    gBufferStep.perform(commandEncoder);
+    // gBufferStep.perform(commandEncoder);
+    gBufferMeshRenderer.perform(device, commandEncoder);
     gBufferDebugger.perform(context, commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
