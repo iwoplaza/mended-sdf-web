@@ -1,7 +1,8 @@
 import './style.css';
 
-import triangleVertWGSL from './shaders/triangle.vert.wgsl?raw';
-import redFragWGSL from './shaders/red.frag.wgsl?raw';
+import { GBuffer } from './gBuffer';
+import { GBufferStep } from './gBufferStep';
+import { GBufferDebugger } from './gBufferDebugger';
 
 async function main() {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -21,55 +22,51 @@ async function main() {
   canvas.height = canvas.clientHeight * devicePixelRatio;
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 
+  const gBuffer = new GBuffer(device, [canvas.width, canvas.height]);
+  const gBufferStep = new GBufferStep(device, gBuffer);
+  const gBufferDebugger = new GBufferDebugger(
+    device,
+    presentationFormat,
+    gBuffer,
+  );
+
   context.configure({
     device,
     format: presentationFormat,
     alphaMode: 'premultiplied',
   });
 
-  const pipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: {
-      module: device.createShaderModule({
-        code: triangleVertWGSL,
-      }),
-      entryPoint: 'main',
-    },
-    fragment: {
-      module: device.createShaderModule({
-        code: redFragWGSL,
-      }),
-      entryPoint: 'main',
-      targets: [
-        {
-          format: presentationFormat,
-        },
-      ],
-    },
-    primitive: {
-      topology: 'triangle-list',
-    },
+  // Create a sampler with linear filtering for smooth interpolation.
+  const sampler = device.createSampler({
+    magFilter: 'linear',
+    minFilter: 'linear',
   });
+
+  // const uniformBindGroup = device.createBindGroup({
+  //   layout: pipeline.getBindGroupLayout(0),
+  //   entries: [
+  //     {
+  //       binding: 0,
+  //       resource: {
+  //         buffer: uniformBuffer,
+  //       },
+  //     },
+  //     {
+  //       binding: 1,
+  //       resource: sampler,
+  //     },
+  //     {
+  //       binding: 2,
+  //       resource: cubeTexture.createView(),
+  //     },
+  //   ],
+  // });
 
   function frame() {
     const commandEncoder = device.createCommandEncoder();
-    const textureView = context.getCurrentTexture().createView();
 
-    const renderPassDescriptor: GPURenderPassDescriptor = {
-      colorAttachments: [
-        {
-          view: textureView,
-          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    };
-
-    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-    passEncoder.setPipeline(pipeline);
-    passEncoder.draw(3, 1, 0, 0);
-    passEncoder.end();
+    gBufferStep.perform(commandEncoder);
+    gBufferDebugger.perform(context, commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
     requestAnimationFrame(frame);
