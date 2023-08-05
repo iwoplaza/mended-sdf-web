@@ -1,12 +1,21 @@
+import { BufferWriter } from 'typed-binary';
+
+import { GBuffer } from './gBuffer';
+import { SceneSchema } from './schema/scene';
 import menderWGSL from './shaders/mender.wgsl?raw';
 
 export class MenderStep {
-  private _menderPassDescriptor: GPURenderPassDescriptor;
-  private _menderPassColorAttachment: GPURenderPassColorAttachment;
   private _pipeline: GPURenderPipeline;
+  private _passDescriptor: GPURenderPassDescriptor;
+  private _passColorAttachment: GPURenderPassColorAttachment;
+  private _bindGroup: GPUBindGroup;
 
-  constructor(device: GPUDevice, presentationFormat: GPUTextureFormat) {
-    this._menderPassColorAttachment = {
+  constructor(
+    device: GPUDevice,
+    presentationFormat: GPUTextureFormat,
+    gBuffer: GBuffer,
+  ) {
+    this._passColorAttachment = {
       // view is acquired and set in render loop.
       view: undefined as unknown as GPUTextureView,
 
@@ -15,22 +24,76 @@ export class MenderStep {
       storeOp: 'store',
     };
 
-    this._menderPassDescriptor = {
-      colorAttachments: [this._menderPassColorAttachment],
+    this._passDescriptor = {
+      colorAttachments: [this._passColorAttachment],
     };
 
-    const menderShaderModule = device.createShaderModule({
+    //
+    // SCENE
+    //
+
+    const scene = {
+      canvasSize: [gBuffer.size[0], gBuffer.size[1]] as [number, number],
+    };
+
+    const sceneUniformBuffer = device.createBuffer({
+      size: 2 * 4 /* vec2<i32> */,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Eagerly filling the buffer
+    const sceneUniformData = new ArrayBuffer(SceneSchema.sizeOf(scene));
+    const bufferWriter = new BufferWriter(sceneUniformData);
+    SceneSchema.write(bufferWriter, scene);
+
+    device.queue.writeBuffer(
+      sceneUniformBuffer,
+      0,
+      sceneUniformData,
+      0,
+      sceneUniformData.byteLength,
+    );
+
+    const bindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: {
+            type: 'uniform',
+          },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: 'unfilterable-float',
+          },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: {
+            sampleType: 'unfilterable-float',
+          },
+        },
+      ],
+    });
+
+    const shaderModule = device.createShaderModule({
       code: menderWGSL,
     });
 
     this._pipeline = device.createRenderPipeline({
-      layout: 'auto',
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [bindGroupLayout],
+      }),
       vertex: {
-        module: menderShaderModule,
+        module: shaderModule,
         entryPoint: 'main_vert',
       },
       fragment: {
-        module: menderShaderModule,
+        module: shaderModule,
         entryPoint: 'main_frag',
         targets: [
           {
@@ -42,21 +105,38 @@ export class MenderStep {
         topology: 'triangle-list',
       },
     });
+
+    this._bindGroup = device.createBindGroup({
+      layout: bindGroupLayout,
+      entries: [
+        {
+          binding: 0,
+          resource: { buffer: sceneUniformBuffer },
+        },
+        {
+          binding: 1,
+          resource: gBuffer.blurredAndAlbedoView,
+        },
+        {
+          binding: 2,
+          resource: gBuffer.normalsAndDepthView,
+        },
+      ],
+    });
   }
 
-  getMenderPassDescriptor(context: GPUCanvasContext) {
+  getPassDescriptor(context: GPUCanvasContext) {
     const textureView = context.getCurrentTexture().createView();
-    this._menderPassColorAttachment.view = textureView;
+    this._passColorAttachment.view = textureView;
 
-    return this._menderPassDescriptor;
+    return this._passDescriptor;
   }
 
   perform(ctx: GPUCanvasContext, commandEncoder: GPUCommandEncoder) {
-    const menderPass = commandEncoder.beginRenderPass(
-      this.getMenderPassDescriptor(ctx),
-    );
-    menderPass.setPipeline(this._pipeline);
-    menderPass.draw(6, 1);
-    menderPass.end();
+    const pass = commandEncoder.beginRenderPass(this.getPassDescriptor(ctx));
+    pass.setPipeline(this._pipeline);
+    pass.setBindGroup(0, this._bindGroup);
+    pass.draw(6);
+    pass.end();
   }
 }

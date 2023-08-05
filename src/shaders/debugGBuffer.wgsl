@@ -11,13 +11,13 @@ const SCREEN_RECT = array<vec2<f32>, 6>(
 struct Uniforms {
   canvasSize: vec2<i32>,
 }
+
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var blurredAndAlbedo: texture_2d<f32>;
 @group(0) @binding(2) var normalsAndDepth: texture_2d<f32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
-  @location(0) coord: vec2<f32>,
 }
 
 @vertex
@@ -27,7 +27,6 @@ fn main_vert(
   var output: VertexOutput;
 
   output.position = vec4(SCREEN_RECT[vertexIndex], 0.0, 1.0);
-  output.coord = SCREEN_RECT[vertexIndex] * 0.5 + 0.5;
 
   return output;
 }

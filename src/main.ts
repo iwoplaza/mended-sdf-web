@@ -4,6 +4,7 @@ import { GBuffer } from './gBuffer';
 // import { GBufferStep } from './gBufferStep';
 import { GBufferDebugger } from './gBufferDebugger';
 import { GBufferMeshRenderer } from './gBufferMeshRenderer';
+import { MenderStep } from './menderStep';
 
 async function main() {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -26,6 +27,7 @@ async function main() {
   const gBuffer = new GBuffer(device, [canvas.width, canvas.height]);
   // const gBufferStep = new GBufferStep(device, gBuffer);
   const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
+  const menderStep = new MenderStep(device, presentationFormat, gBuffer);
   const gBufferDebugger = new GBufferDebugger(
     device,
     presentationFormat,
@@ -43,7 +45,9 @@ async function main() {
 
     // gBufferStep.perform(commandEncoder);
     gBufferMeshRenderer.perform(device, commandEncoder);
-    gBufferDebugger.perform(context, commandEncoder);
+
+    menderStep.perform(context, commandEncoder);
+    // gBufferDebugger.perform(context, commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
     requestAnimationFrame(frame);

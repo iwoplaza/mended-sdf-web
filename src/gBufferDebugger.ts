@@ -1,4 +1,5 @@
 import { BufferWriter } from 'typed-binary';
+
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
 import debugGBufferWGSL from './shaders/debugGBuffer.wgsl?raw';
@@ -26,10 +27,6 @@ export class GBufferDebugger {
     this._passDescriptor = {
       colorAttachments: [this._passColorAttachment],
     };
-
-    const shaderModule = device.createShaderModule({
-      code: debugGBufferWGSL,
-    });
 
     //
     // SCENE
@@ -81,6 +78,10 @@ export class GBufferDebugger {
           },
         },
       ],
+    });
+
+    const shaderModule = device.createShaderModule({
+      code: debugGBufferWGSL,
     });
 
     this._pipeline = device.createRenderPipeline({
