@@ -31,7 +31,7 @@ fn main_vert(
   let worldPosition = (uniforms.modelMatrix * vec4(position, 1.0)).xyz;
   let viewPosition = camera.viewMatrix * vec4(worldPosition, 1.0);
   output.Position = projection.projectionMatrix * viewPosition;
-  output.fragNormal = normalize(camera.normalViewMatrix * (uniforms.normalModelMatrix * vec4(normal, 1.0)).xyz);
+  output.fragNormal = camera.normalViewMatrix * (uniforms.normalModelMatrix * vec4(normal, 1.0)).xyz;
   output.fragUV = uv;
   // output.fragDepth = worldPosition.x;
   output.fragDepth = -viewPosition.z * 0.05;
@@ -54,7 +54,7 @@ fn main_frag(
   let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
 
   var output : GBufferOutput;
-  output.normalAndDepth = vec4(fragNormal, fragDepth / (1.0 + fragDepth));
+  output.normalAndDepth = vec4(normalize(fragNormal), fragDepth / (1.0 + fragDepth));
   output.albedo = vec4(c, c, c, 1.0);
 
   return output;

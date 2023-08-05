@@ -5,6 +5,9 @@ import { GBuffer } from './gBuffer';
 import { GBufferDebugger } from './gBufferDebugger';
 import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 import { MenderStep } from './menderStep';
+import { FPSCounter } from './fpsCounter';
+
+new FPSCounter(document.getElementById('fps-counter')!);
 
 async function main() {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement;

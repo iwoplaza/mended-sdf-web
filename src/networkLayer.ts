@@ -26,7 +26,7 @@ export class NetworkLayer {
 
     this.weightBuffer = device.createBuffer({
       size: weightData.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.STORAGE,
       mappedAtCreation: true,
     });
 
@@ -38,7 +38,7 @@ export class NetworkLayer {
 
     this.biasBuffer = device.createBuffer({
       size: biasData.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.STORAGE,
       mappedAtCreation: true,
     });
 

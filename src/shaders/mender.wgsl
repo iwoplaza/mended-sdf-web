@@ -67,6 +67,7 @@ const LAYER_1_CHANNELS = 64;
 fn convolve(coord: vec2i) -> array<f32, 64> {
   var result = conv1Bias;
 
+  var weight_idx: u32 = 0;
   for (var out_c = 0; out_c < LAYER_1_CHANNELS; out_c++) {
     for (var i = -4; i <= 4; i++) {
       for (var j = -4; j <= 4; j++) {
@@ -85,21 +86,18 @@ fn convolve(coord: vec2i) -> array<f32, 64> {
         );
 
         var sample = array<f32, LAYER_0_CHANNELS>(
-          blurredAndAlbedoSample.r,
-          blurredAndAlbedoSample.g,
-          blurredAndAlbedoSample.b,
-          normalsAndDepthSample.a,
-          normalsAndDepthSample.x,
-          normalsAndDepthSample.y,
-          blurredAndAlbedoSample.a,
+          blurredAndAlbedoSample.r, // 0
+          blurredAndAlbedoSample.g, // 1
+          blurredAndAlbedoSample.b, // 2
+          normalsAndDepthSample.a,  // 3
+          normalsAndDepthSample.x,  // 4
+          normalsAndDepthSample.y,  // 5
+          blurredAndAlbedoSample.a, // 6
         );
 
         for (var in_c = 0; in_c < LAYER_0_CHANNELS; in_c++) {
-          result[out_c] += sample[in_c] * conv1Weight[
-            out_c * 9 * 9 * 7 +
-            i * 9 * 7 +
-            j * 7 +
-            in_c];
+          result[out_c] += sample[in_c] * conv1Weight[weight_idx];
+          weight_idx++;
         }
       }
     }
@@ -128,15 +126,21 @@ fn main_frag(
     0
   );
 
+  if (
+    coord.x < 4 || coord.x >= uniforms.canvasSize.x - 4 ||
+    coord.y < 4 || coord.y >= uniforms.canvasSize.y - 4
+  ) {
+    return vec4f(1.0, 0.0, 0.0, 1.0);
+  }
+
   let result = convolve(coord);
   // let result1 = convolve(coord);
   // let result2 = convolve(coord);
 
-  normalsAndDepthSample.a = 1.0;
-
   let c = coord_f32.xy / vec2f(uniforms.canvasSize);
 
   // return vec4f(result[0] / 1000.0, result[1] / 1000.0, result[2] / 1000.0, 1.0);
-  return vec4f(result[0], result[1], result[2], 1.0);
+  return vec4f(result[11], result[1], result[2], 1.0);
   // return blurredAndAlbedoSample;
+  // return normalsAndDepthSample;
 }
