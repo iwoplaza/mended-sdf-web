@@ -3,12 +3,18 @@ import { BufferWriter } from 'typed-binary';
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
 import menderWGSL from './shaders/mender.wgsl?raw';
+import { Model3 } from './model3';
+import { NetworkLayer } from './networkLayer';
 
 export class MenderStep {
   private _pipeline: GPURenderPipeline;
   private _passDescriptor: GPURenderPassDescriptor;
   private _passColorAttachment: GPURenderPassColorAttachment;
+
   private _bindGroup: GPUBindGroup;
+  private conv1: NetworkLayer;
+  private conv2: NetworkLayer;
+  private conv3: NetworkLayer;
 
   constructor(
     device: GPUDevice,
@@ -27,6 +33,14 @@ export class MenderStep {
     this._passDescriptor = {
       colorAttachments: [this._passColorAttachment],
     };
+
+    //
+    // Weights & Biases
+    //
+
+    this.conv1 = new NetworkLayer(device, Model3.Conv1Weight, Model3.Conv1Bias);
+    this.conv2 = new NetworkLayer(device, Model3.Conv2Weight, Model3.Conv2Bias);
+    this.conv3 = new NetworkLayer(device, Model3.Conv3Weight, Model3.Conv3Bias);
 
     //
     // SCENE
@@ -86,7 +100,7 @@ export class MenderStep {
 
     this._pipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
-        bindGroupLayouts: [bindGroupLayout],
+        bindGroupLayouts: [bindGroupLayout, this.conv1.bindGroupLayout],
       }),
       vertex: {
         module: shaderModule,
@@ -136,6 +150,9 @@ export class MenderStep {
     const pass = commandEncoder.beginRenderPass(this.getPassDescriptor(ctx));
     pass.setPipeline(this._pipeline);
     pass.setBindGroup(0, this._bindGroup);
+    pass.setBindGroup(1, this.conv1.bindGroup);
+    pass.setBindGroup(2, this.conv2.bindGroup);
+    pass.setBindGroup(3, this.conv3.bindGroup);
     pass.draw(6);
     pass.end();
   }

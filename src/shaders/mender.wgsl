@@ -16,6 +16,19 @@ struct Uniforms {
 @group(0) @binding(1) var blurredAndAlbedo: texture_2d<f32>;
 @group(0) @binding(2) var normalsAndDepth: texture_2d<f32>;
 
+const CONV1_WEIGHTS: i32 = 64 * 9 * 9 * 7;
+@group(1) @binding(0) var<storage, read> conv1Weight: array<f32, CONV1_WEIGHTS>;
+@group(1) @binding(1) var<storage, read> conv1Bias: array<f32, 64>;
+
+const CONV2_WEIGHTS: i32 = 32 * 5 * 5 * 64;
+@group(2) @binding(0) var<storage, read> conv2Weight: array<f32, CONV2_WEIGHTS>;
+@group(2) @binding(1) var<storage, read> conv2Bias: array<f32, 32>;
+
+const CONV3_WEIGHTS: i32 = 3 * 5 * 5 * 32;
+@group(3) @binding(0) var<storage, read> conv3Weight: array<f32, CONV3_WEIGHTS>;
+@group(3) @binding(1) var<storage, read> conv3Bias: array<f32, 3>;
+
+
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
 }
@@ -52,7 +65,7 @@ def convolve(input, output, filter, bias, kernel_size: int, dims: tuple[int, int
 const LAYER_0_CHANNELS = 7;
 const LAYER_1_CHANNELS = 64;
 fn convolve(coord: vec2i) -> array<f32, 64> {
-  var result = array<f32, LAYER_1_CHANNELS>();
+  var result = conv1Bias;
 
   for (var out_c = 0; out_c < LAYER_1_CHANNELS; out_c++) {
     for (var i = -4; i <= 4; i++) {
@@ -82,7 +95,11 @@ fn convolve(coord: vec2i) -> array<f32, 64> {
         );
 
         for (var in_c = 0; in_c < LAYER_0_CHANNELS; in_c++) {
-          result[out_c] += sample[in_c];
+          result[out_c] += sample[in_c] * conv1Weight[
+            out_c * 9 * 9 * 7 +
+            i * 9 * 7 +
+            j * 7 +
+            in_c];
         }
       }
     }
@@ -90,6 +107,8 @@ fn convolve(coord: vec2i) -> array<f32, 64> {
 
   return result;
 }
+
+
 
 @fragment
 fn main_frag(
@@ -110,13 +129,14 @@ fn main_frag(
   );
 
   let result = convolve(coord);
-  let result1 = convolve(coord);
-  let result2 = convolve(coord);
+  // let result1 = convolve(coord);
+  // let result2 = convolve(coord);
 
   normalsAndDepthSample.a = 1.0;
 
   let c = coord_f32.xy / vec2f(uniforms.canvasSize);
 
-  return vec4f(result[0] / 1000.0, result[1] / 1000.0, result[2] / 1000.0, 1.0);
+  // return vec4f(result[0] / 1000.0, result[1] / 1000.0, result[2] / 1000.0, 1.0);
+  return vec4f(result[0], result[1], result[2], 1.0);
   // return blurredAndAlbedoSample;
 }
