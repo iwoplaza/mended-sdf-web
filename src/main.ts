@@ -2,10 +2,11 @@ import './style.css';
 
 import { GBuffer } from './gBuffer';
 // import { GBufferStep } from './gBufferStep';
-import { GBufferDebugger } from './gBufferDebugger';
+// import { GBufferDebugger } from './gBufferDebugger';
 import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 import { MenderStep } from './menderStep';
 import { FPSCounter } from './fpsCounter';
+import { PostProcessingStep } from './postProcessingStep';
 
 new FPSCounter(document.getElementById('fps-counter')!);
 
@@ -18,7 +19,11 @@ async function main() {
     throw new Error(`Null GPU adapter`);
   }
 
-  const device = await adapter.requestDevice();
+  const device = await adapter.requestDevice({
+    requiredLimits: {
+      'maxComputeWorkgroupStorageSize': 18432,
+    },
+  });
 
   const context = canvas.getContext('webgpu') as GPUCanvasContext;
 
@@ -28,14 +33,29 @@ async function main() {
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 
   const gBuffer = new GBuffer(device, [canvas.width, canvas.height]);
+
+  //
+  // Mender result buffer
+  //
+
+  const menderResultBuffer = device.createBuffer({
+    label: 'Mender Result Buffer',
+    size: gBuffer.size[0] * gBuffer.size[1] * 3 * Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.STORAGE,
+  });
+
+  //
+
   // const gBufferStep = new GBufferStep(device, gBuffer);
   const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
-  const menderStep = new MenderStep(device, presentationFormat, gBuffer);
-  const gBufferDebugger = new GBufferDebugger(
-    device,
-    presentationFormat,
-    gBuffer,
-  );
+  const menderStep = MenderStep({ device, gBuffer, menderResultBuffer });
+  
+  // const gBufferDebugger = new GBufferDebugger(
+  //   device,
+  //   presentationFormat,
+  //   gBuffer,
+  // );
+  const postProcessing = PostProcessingStep({ device, context, gBuffer, presentationFormat, menderResultBuffer });
 
   context.configure({
     device,
@@ -49,8 +69,10 @@ async function main() {
     // gBufferStep.perform(commandEncoder);
     gBufferMeshRenderer.perform(device, commandEncoder);
 
-    menderStep.perform(context, commandEncoder);
+    // menderStep.perform(commandEncoder);
     // gBufferDebugger.perform(context, commandEncoder);
+
+    postProcessing.perform(commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
     requestAnimationFrame(frame);

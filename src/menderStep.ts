@@ -1,159 +1,301 @@
 import { BufferWriter } from 'typed-binary';
 
+import menderWGSL from './shaders/convolve.wgsl?raw';
+import { Model3 } from './model3';
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
-import menderWGSL from './shaders/mender.wgsl?raw';
-import { Model3 } from './model3';
 import { NetworkLayer } from './networkLayer';
+import { preprocessShaderCode } from './preprocessShaderCode';
 
-export class MenderStep {
-  private _pipeline: GPURenderPipeline;
-  private _passDescriptor: GPURenderPassDescriptor;
-  private _passColorAttachment: GPURenderPassColorAttachment;
+const blockDim = 8;
 
-  private _bindGroup: GPUBindGroup;
-  private conv1: NetworkLayer;
-  private conv2: NetworkLayer;
-  private conv3: NetworkLayer;
+type Options = {
+  device: GPUDevice;
+  gBuffer: GBuffer;
+  menderResultBuffer: GPUBuffer;
+};
 
-  constructor(
-    device: GPUDevice,
-    presentationFormat: GPUTextureFormat,
-    gBuffer: GBuffer,
-  ) {
-    this._passColorAttachment = {
-      // view is acquired and set in render loop.
-      view: undefined as unknown as GPUTextureView,
+export const MenderStep = ({
+  device,
+  gBuffer,
+  menderResultBuffer,
+}: Options) => {
+  // Textures
 
-      clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-      loadOp: 'clear',
-      storeOp: 'store',
-    };
+  const firstWorkBuffer = device.createBuffer({
+    label: 'First Work Buffer',
+    size: gBuffer.size[0] * gBuffer.size[1] * 64 * Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.STORAGE,
+  });
+  
+  const secondWorkBuffer = device.createBuffer({
+    label: 'Second Work Buffer',
+    size: gBuffer.size[0] * gBuffer.size[1] * 32 * Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.STORAGE,
+  });
 
-    this._passDescriptor = {
-      colorAttachments: [this._passColorAttachment],
-    };
+  //
+  // Weights & Biases
+  //
 
-    //
-    // Weights & Biases
-    //
+  const convLayers = [
+    new NetworkLayer(device, Model3.Conv1Weight, Model3.Conv1Bias),
+    new NetworkLayer(device, Model3.Conv2Weight, Model3.Conv2Bias),
+    new NetworkLayer(device, Model3.Conv3Weight, Model3.Conv3Bias),
+  ];
 
-    this.conv1 = new NetworkLayer(device, Model3.Conv1Weight, Model3.Conv1Bias);
-    this.conv2 = new NetworkLayer(device, Model3.Conv2Weight, Model3.Conv2Bias);
-    this.conv3 = new NetworkLayer(device, Model3.Conv3Weight, Model3.Conv3Bias);
+  //
+  // SCENE
+  //
 
-    //
-    // SCENE
-    //
+  const scene = {
+    canvasSize: [gBuffer.size[0], gBuffer.size[1]] as [number, number],
+  };
 
-    const scene = {
-      canvasSize: [gBuffer.size[0], gBuffer.size[1]] as [number, number],
-    };
+  const sceneUniformBuffer = device.createBuffer({
+    size: 2 * 4 /* vec2<i32> */,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
 
-    const sceneUniformBuffer = device.createBuffer({
-      size: 2 * 4 /* vec2<i32> */,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+  // Eagerly filling the buffer
+  const sceneUniformData = new ArrayBuffer(SceneSchema.sizeOf(scene));
+  const bufferWriter = new BufferWriter(sceneUniformData);
+  SceneSchema.write(bufferWriter, scene);
 
-    // Eagerly filling the buffer
-    const sceneUniformData = new ArrayBuffer(SceneSchema.sizeOf(scene));
-    const bufferWriter = new BufferWriter(sceneUniformData);
-    SceneSchema.write(bufferWriter, scene);
+  device.queue.writeBuffer(
+    sceneUniformBuffer,
+    0,
+    sceneUniformData,
+    0,
+    sceneUniformData.byteLength,
+  );
 
-    device.queue.writeBuffer(
-      sceneUniformBuffer,
-      0,
-      sceneUniformData,
-      0,
-      sceneUniformData.byteLength,
-    );
-
-    const bindGroupLayout = device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.FRAGMENT,
-          buffer: {
-            type: 'uniform',
-          },
+  const uniformBindGroupLayout = device.createBindGroupLayout({
+    label: 'Mender Uniform BindGroup Layout',
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'uniform',
         },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.FRAGMENT,
-          texture: {
-            sampleType: 'unfilterable-float',
-          },
-        },
-        {
-          binding: 2,
-          visibility: GPUShaderStage.FRAGMENT,
-          texture: {
-            sampleType: 'unfilterable-float',
-          },
-        },
-      ],
-    });
+      },
+    ],
+  });
 
-    const shaderModule = device.createShaderModule({
-      code: menderWGSL,
-    });
+  const ioBindGroupLayout = device.createBindGroupLayout({
+    label: 'Mender IO BindGroup Layout',
+    entries: [
+      // outputBuffer
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'storage',
+        },
+      },
+      // inputBuffer
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'read-only-storage',
+        },
+      },
+      // blurredTex
+      {
+        binding: 2,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: {
+          sampleType: 'unfilterable-float',
+        },
+      },
+      // auxTex
+      {
+        binding: 3,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: {
+          sampleType: 'unfilterable-float',
+        },
+      },
+    ],
+  });
 
-    this._pipeline = device.createRenderPipeline({
+  const pipelines = [
+    device.createComputePipeline({
+      label: 'Layer #1 Pipeline',
       layout: device.createPipelineLayout({
-        bindGroupLayouts: [bindGroupLayout, this.conv1.bindGroupLayout],
+        bindGroupLayouts: [uniformBindGroupLayout, ioBindGroupLayout, convLayers[0].bindGroupLayout]
       }),
-      vertex: {
-        module: shaderModule,
-        entryPoint: 'main_vert',
+      compute: {
+        module: device.createShaderModule({
+          label: 'Layer #1 convolutional shader',
+          code: preprocessShaderCode(menderWGSL, {
+            KERNEL_RADIUS: '4',
+            IN_CHANNELS: '7',
+            OUT_CHANNELS: '64',
+            RELU: 'true',
+            INPUT_FROM_GBUFFER: 'true',
+          }),
+        }),
+        entryPoint: 'main',
       },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'main_frag',
-        targets: [
-          {
-            format: presentationFormat,
-          },
-        ],
+    }),
+    device.createComputePipeline({
+      label: 'Layer #2 Pipeline',
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [uniformBindGroupLayout, ioBindGroupLayout, convLayers[1].bindGroupLayout]
+      }),
+      compute: {
+        module: device.createShaderModule({
+          label: 'Layer #2 convolutional shader',
+          code: preprocessShaderCode(menderWGSL, {
+            KERNEL_RADIUS: '2',
+            IN_CHANNELS: '64',
+            OUT_CHANNELS: '32',
+            RELU: 'true',
+            INPUT_FROM_GBUFFER: 'false',
+          }),
+        }),
+        entryPoint: 'main',
       },
-      primitive: {
-        topology: 'triangle-list',
+    }),
+    device.createComputePipeline({
+      label: 'Layer #3 Pipeline',
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [uniformBindGroupLayout, ioBindGroupLayout, convLayers[2].bindGroupLayout]
+      }),
+      compute: {
+        module: device.createShaderModule({
+          label: 'Layer #2 convolutional shader',
+          code: preprocessShaderCode(menderWGSL, {
+            KERNEL_RADIUS: '2',
+            IN_CHANNELS: '32',
+            OUT_CHANNELS: '3',
+            RELU: 'false',
+            INPUT_FROM_GBUFFER: 'false',
+          }),
+        }),
+        entryPoint: 'main',
       },
-    });
+    }),
+  ];
 
-    this._bindGroup = device.createBindGroup({
-      layout: bindGroupLayout,
+  const uniformBindGroup = device.createBindGroup({
+    layout: uniformBindGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: { buffer: sceneUniformBuffer },
+      },
+    ],
+  });
+
+  const ioBindGroups = [
+    device.createBindGroup({
+      label: 'Layer #1 IO BindGroup',
+      layout: ioBindGroupLayout,
+      entries: [
+        // blurredTex
+        {
+          binding: 2,
+          resource: gBuffer.blurredView,
+        },
+        // auxTex
+        {
+          binding: 3,
+          resource: gBuffer.auxView,
+        },
+        // outputBuffer
+        {
+          binding: 0,
+          resource: {
+            buffer: firstWorkBuffer,
+          },
+        },
+        // UNUSED
+        {
+          binding: 1,
+          resource: { buffer: secondWorkBuffer },
+        }
+      ],
+    }),
+    device.createBindGroup({
+      label: 'Layer #2 IO BindGroup',
+      layout: ioBindGroupLayout,
       entries: [
         {
           binding: 0,
-          resource: { buffer: sceneUniformBuffer },
+          resource: {
+            buffer: firstWorkBuffer,
+          },
         },
         {
           binding: 1,
-          resource: gBuffer.blurredAndAlbedoView,
+          resource: {
+            buffer: secondWorkBuffer,
+          },
         },
+
+        // UNUSED blurredTex
         {
           binding: 2,
-          resource: gBuffer.normalsAndDepthView,
+          resource: gBuffer.blurredView,
+        },
+        // UNUSED auxTex
+        {
+          binding: 3,
+          resource: gBuffer.auxView,
         },
       ],
-    });
-  }
+    }),
+    device.createBindGroup({
+      label: 'Layer #3 IO BindGroup',
+      layout: ioBindGroupLayout,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: secondWorkBuffer,
+          },
+        },
+        {
+          binding: 1,
+          resource: {
+            buffer: menderResultBuffer,
+          },
+        },
 
-  getPassDescriptor(context: GPUCanvasContext) {
-    const textureView = context.getCurrentTexture().createView();
-    this._passColorAttachment.view = textureView;
+        // UNUSED blurredTex
+        {
+          binding: 2,
+          resource: gBuffer.blurredView,
+        },
+        // UNUSED auxTex
+        {
+          binding: 3,
+          resource: gBuffer.auxView,
+        },
+      ],
+    }),
+  ];
 
-    return this._passDescriptor;
-  }
+  return {
+    perform(commandEncoder: GPUCommandEncoder) {
+      const computePass = commandEncoder.beginComputePass();
 
-  perform(ctx: GPUCanvasContext, commandEncoder: GPUCommandEncoder) {
-    const pass = commandEncoder.beginRenderPass(this.getPassDescriptor(ctx));
-    pass.setPipeline(this._pipeline);
-    pass.setBindGroup(0, this._bindGroup);
-    pass.setBindGroup(1, this.conv1.bindGroup);
-    pass.setBindGroup(2, this.conv2.bindGroup);
-    pass.setBindGroup(3, this.conv3.bindGroup);
-    pass.draw(6);
-    pass.end();
-  }
+      for (let i = 0; i < 3; ++i) {
+        computePass.setPipeline(pipelines[i]);
+        computePass.setBindGroup(0, uniformBindGroup);
+        computePass.setBindGroup(1, ioBindGroups[i]);
+        computePass.setBindGroup(2, convLayers[i].bindGroup);
+        computePass.dispatchWorkgroups(
+          Math.ceil(gBuffer.size[0] / blockDim),
+          Math.ceil(gBuffer.size[1] / blockDim)
+        );
+      }
+
+      computePass.end();
+    }
+  };
 }

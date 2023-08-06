@@ -9,14 +9,14 @@ export class NetworkLayer {
       entries: [
         {
           binding: 0,
-          visibility: GPUShaderStage.FRAGMENT,
+          visibility: GPUShaderStage.COMPUTE,
           buffer: {
             type: 'read-only-storage',
           },
         },
         {
           binding: 1,
-          visibility: GPUShaderStage.FRAGMENT,
+          visibility: GPUShaderStage.COMPUTE,
           buffer: {
             type: 'read-only-storage',
           },

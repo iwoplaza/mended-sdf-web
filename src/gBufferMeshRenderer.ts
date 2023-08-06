@@ -56,14 +56,14 @@ export class GBufferMeshRenderer {
     this.passDescriptor = {
       colorAttachments: [
         {
-          view: gBuffer.blurredAndAlbedoView,
+          view: gBuffer.blurredView,
 
           clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
           loadOp: 'clear',
           storeOp: 'store',
         },
         {
-          view: gBuffer.normalsAndDepthView,
+          view: gBuffer.auxView,
 
           clearValue: { r: 0.0, g: 0.0, b: 1.0, a: 1.0 },
           loadOp: 'clear',
@@ -80,6 +80,7 @@ export class GBufferMeshRenderer {
     };
 
     const writeGBufferShader = device.createShaderModule({
+      label: 'Mesh Renderer',
       code: renderMeshGBufferWGSL,
     });
 

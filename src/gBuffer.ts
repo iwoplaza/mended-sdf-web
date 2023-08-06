@@ -1,34 +1,34 @@
 export class GBuffer {
-  blurredAndAlbedoTexture: GPUTexture;
-  normalsAndDepthTexture: GPUTexture;
+  blurredTexture: GPUTexture;
+  auxTexture: GPUTexture;
 
-  blurredAndAlbedoView: GPUTextureView;
-  normalsAndDepthView: GPUTextureView;
+  blurredView: GPUTextureView;
+  auxView: GPUTextureView;
 
   targets = [
-    // blurred & albedo
+    // blurred
     { format: 'rgba8unorm' },
-    // normal & depth
+    // depth & normal.xy & luminance
     { format: 'rgba16float' },
   ] as const;
 
   constructor(device: GPUDevice, private _size: [number, number]) {
-    this.blurredAndAlbedoTexture = device.createTexture({
+    this.blurredTexture = device.createTexture({
       size: _size,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       format: 'rgba8unorm',
     });
 
-    this.normalsAndDepthTexture = device.createTexture({
+    this.auxTexture = device.createTexture({
       size: _size,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       format: 'rgba16float',
     });
 
-    this.blurredAndAlbedoView = this.blurredAndAlbedoTexture.createView();
-    this.normalsAndDepthView = this.normalsAndDepthTexture.createView();
+    this.blurredView = this.blurredTexture.createView();
+    this.auxView = this.auxTexture.createView();
   }
 
   get size() {

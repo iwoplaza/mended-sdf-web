@@ -81,6 +81,7 @@ export class GBufferDebugger {
     });
 
     const shaderModule = device.createShaderModule({
+      label: 'GBuffer Debugger',
       code: debugGBufferWGSL,
     });
 
@@ -115,11 +116,11 @@ export class GBufferDebugger {
         },
         {
           binding: 1,
-          resource: gBuffer.blurredAndAlbedoView,
+          resource: gBuffer.blurredView,
         },
         {
           binding: 2,
-          resource: gBuffer.normalsAndDepthView,
+          resource: gBuffer.auxView,
         },
       ],
     });
