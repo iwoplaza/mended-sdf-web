@@ -39,7 +39,7 @@ fn convolve(local: vec2u, in_channel_begin: u32, in_channel_end: u32, result: pt
 
         weight_idx += in_channel_begin;
         for (var in_c: u32 = in_channel_begin; in_c < in_channel_end; in_c++) {
-          (*result)[out_c] += tile[local.x + i][local.y + j][in_c] * conv1Weight[weight_idx];
+          (*result)[out_c] += tile[local.x + i][local.y + j][in_c - in_channel_begin] * conv1Weight[weight_idx];
           weight_idx++;
         }
         weight_idx += IN_CHANNELS - in_channel_end;
@@ -171,8 +171,8 @@ fn main(
     // Waiting for the whole shared memory to be filled.
     workgroupBarrier();
 
-    // convolve(lid, 0, IN_CHANNELS, &result);
-    convolve_global(coord, 0, IN_CHANNELS, &result);
+    convolve(lid, offset, limit, &result);
+    // convolve_global(coord, offset, limit, &result);
 
     if (RELU) {
       ReLU(&result);
