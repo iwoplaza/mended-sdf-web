@@ -28,7 +28,7 @@ const CHANNELS_PER_TILE = 32;
 const PASSES = u32(ceil(f32(IN_CHANNELS) / f32(CHANNELS_PER_TILE)));
 
 // BLOCK_SIZExBLOCK_SIZE tile extended by 4 pixel padding to accomodate the 9x9 kernel.
-var<workgroup> tile: array<array<array<f32, 32>, BLOCK_SIZE + 8>, BLOCK_SIZE + 8>;
+var<workgroup> tile: array<array<array<f32, CHANNELS_PER_TILE>, BLOCK_SIZE + 8>, BLOCK_SIZE + 8>;
 
 fn convolve(local: vec2u, in_channel_begin: u32, in_channel_end: u32, result: ptr<function, array<f32, OUT_CHANNELS>>) {
   var weight_idx: u32 = 0;
@@ -50,9 +50,9 @@ fn convolve(local: vec2u, in_channel_begin: u32, in_channel_end: u32, result: pt
 fn convolve_global(coord: vec2u, in_channel_begin: u32, in_channel_end: u32, result: ptr<function, array<f32, OUT_CHANNELS>>) {
   var weight_idx: u32 = 0;
   for (var out_c: u32 = 0; out_c < OUT_CHANNELS; out_c++) {
-    for (var i: u32 = 4-KERNEL_RADIUS; i <= 4+KERNEL_RADIUS; i++) {
-      for (var j: u32 = 4-KERNEL_RADIUS; j <= 4+KERNEL_RADIUS; j++) {
-        let sample = sample_global(coord.x + i, coord.y + j);
+    for (var i: i32 = -i32(KERNEL_RADIUS); i <= i32(KERNEL_RADIUS); i++) {
+      for (var j: i32 = -i32(KERNEL_RADIUS); j <= i32(KERNEL_RADIUS); j++) {
+        let sample = sample_global(i32(coord.x) + i, i32(coord.y) + j);
 
         weight_idx += in_channel_begin;
         for (var in_c: u32 = in_channel_begin; in_c < in_channel_end; in_c++) {
@@ -65,10 +65,10 @@ fn convolve_global(coord: vec2u, in_channel_begin: u32, in_channel_end: u32, res
   }
 }
 
-fn sample_global(x: u32, y: u32) -> array<f32, IN_CHANNELS> {
+fn sample_global(x: i32, y: i32) -> array<f32, IN_CHANNELS> {
   let coord = vec2u(
-    max(0, min(x, uniforms.canvasSize.x - 1)),
-    max(0, min(y, uniforms.canvasSize.y - 1)),
+    u32(max(0, min(x, i32(uniforms.canvasSize.x) - 1))),
+    u32(max(0, min(y, i32(uniforms.canvasSize.y) - 1))),
   );
 
   if (INPUT_FROM_GBUFFER) {
@@ -101,8 +101,8 @@ fn sample_global(x: u32, y: u32) -> array<f32, IN_CHANNELS> {
 
     for (var i: u32 = 0; i < IN_CHANNELS; i++) {
       let index =
-        y * uniforms.canvasSize.x * IN_CHANNELS +
-        x * IN_CHANNELS +
+        coord.y * uniforms.canvasSize.x * IN_CHANNELS +
+        coord.x * IN_CHANNELS +
         i;
       
       sample[i] = inputBuffer[index];
@@ -122,19 +122,19 @@ fn main(
 
   let whole_samples = array<array<array<f32, IN_CHANNELS>, 3>, 3>(
     array<array<f32, IN_CHANNELS>, 3>(
-      sample_global(coord.x - BLOCK_SIZE, coord.y - BLOCK_SIZE),
-      sample_global(coord.x - BLOCK_SIZE, coord.y),
-      sample_global(coord.x - BLOCK_SIZE, coord.y + BLOCK_SIZE),
+      sample_global(i32(coord.x) - BLOCK_SIZE, i32(coord.y) - BLOCK_SIZE),
+      sample_global(i32(coord.x) - BLOCK_SIZE, i32(coord.y)),
+      sample_global(i32(coord.x) - BLOCK_SIZE, i32(coord.y) + BLOCK_SIZE),
     ),
     array<array<f32, IN_CHANNELS>, 3>(
-      sample_global(coord.x, coord.y - BLOCK_SIZE),
-      sample_global(coord.x, coord.y),
-      sample_global(coord.x, coord.y + BLOCK_SIZE),
+      sample_global(i32(coord.x), i32(coord.y) - BLOCK_SIZE),
+      sample_global(i32(coord.x), i32(coord.y)),
+      sample_global(i32(coord.x), i32(coord.y) + BLOCK_SIZE),
     ),
     array<array<f32, IN_CHANNELS>, 3>(
-      sample_global(coord.x + BLOCK_SIZE, coord.y - BLOCK_SIZE),
-      sample_global(coord.x + BLOCK_SIZE, coord.y),
-      sample_global(coord.x + BLOCK_SIZE, coord.y + BLOCK_SIZE),
+      sample_global(i32(coord.x) + BLOCK_SIZE, i32(coord.y) - BLOCK_SIZE),
+      sample_global(i32(coord.x) + BLOCK_SIZE, i32(coord.y)),
+      sample_global(i32(coord.x) + BLOCK_SIZE, i32(coord.y) + BLOCK_SIZE),
     ),
   );
 
