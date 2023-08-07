@@ -6,7 +6,7 @@ import { SceneSchema } from './schema/scene';
 import { NetworkLayer } from './networkLayer';
 import { preprocessShaderCode } from './preprocessShaderCode';
 
-const blockDim = 4;
+const blockDim = 8;
 
 type Options = {
   device: GPUDevice;
@@ -33,15 +33,18 @@ export const EdgeDetectionStep = ({
     return [firstVal, 0, 0, 0, 0, 0, 0];
   };
 
+  // edge detection in the Y direction
   const convLayer = new NetworkLayer(
     device,
     new Float32Array([
       ...zeroInChannels(-1),
       ...zeroInChannels(0),
       ...zeroInChannels(1),
+
       ...zeroInChannels(-1),
       ...zeroInChannels(0),
       ...zeroInChannels(1),
+
       ...zeroInChannels(-1),
       ...zeroInChannels(0),
       ...zeroInChannels(1),

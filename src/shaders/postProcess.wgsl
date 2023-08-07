@@ -6,7 +6,7 @@ struct Uniforms {
 @group(0) @binding(1) var blurredTexture: texture_2d<f32>;
 @group(0) @binding(2) var<storage, read> mendedBuffer: array<f32>;
 
-const mendedBufferDimension = 1;
+const mendedBufferDimension = 3;
 
 @fragment
 fn main(

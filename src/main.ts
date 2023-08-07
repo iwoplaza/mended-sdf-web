@@ -22,7 +22,7 @@ async function main() {
 
   const device = await adapter.requestDevice({
     requiredLimits: {
-      maxComputeWorkgroupStorageSize: 18432,
+      maxComputeWorkgroupStorageSize: 32768,
     },
   });
 
@@ -82,8 +82,8 @@ async function main() {
     // gBufferStep.perform(commandEncoder);
     gBufferMeshRenderer.perform(device, commandEncoder);
 
-    edgeDetectionStep.perform(commandEncoder);
-    // menderStep.perform(commandEncoder);
+    // edgeDetectionStep.perform(commandEncoder);
+    menderStep.perform(commandEncoder);
 
     postProcessing.perform(commandEncoder);
     // gBufferDebugger.perform(context, commandEncoder);

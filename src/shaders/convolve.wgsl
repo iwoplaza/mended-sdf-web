@@ -11,7 +11,8 @@ const RELU: bool = {{RELU}};
 const INPUT_FROM_GBUFFER: bool = {{INPUT_FROM_GBUFFER}};
 
 const WEIGHTS = OUT_CHANNELS * (2 * KERNEL_RADIUS + 1) * (2 * KERNEL_RADIUS + 1) * IN_CHANNELS;
-const BLOCK_SIZE = 4;
+const BLOCK_SIZE = 8;
+const TILE_PADDING = 4;
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -28,13 +29,13 @@ const CHANNELS_PER_TILE = 32;
 const PASSES = u32(ceil(f32(IN_CHANNELS) / f32(CHANNELS_PER_TILE)));
 
 // BLOCK_SIZExBLOCK_SIZE tile extended by 4 pixel padding to accomodate the 9x9 kernel.
-var<workgroup> tile: array<array<array<f32, CHANNELS_PER_TILE>, BLOCK_SIZE + 8>, BLOCK_SIZE + 8>;
+var<workgroup> tile: array<array<array<f32, CHANNELS_PER_TILE>, BLOCK_SIZE + TILE_PADDING * 2>, BLOCK_SIZE + TILE_PADDING * 2>;
 
 fn convolve(local: vec2u, in_channel_begin: u32, in_channel_end: u32, result: ptr<function, array<f32, OUT_CHANNELS>>) {
   var weight_idx: u32 = 0;
   for (var out_c: u32 = 0; out_c < OUT_CHANNELS; out_c++) {
-    for (var i: u32 = 4-KERNEL_RADIUS; i <= 4+KERNEL_RADIUS; i++) {
-      for (var j: u32 = 4-KERNEL_RADIUS; j <= 4+KERNEL_RADIUS; j++) {
+    for (var i: u32 = TILE_PADDING-KERNEL_RADIUS; i <= TILE_PADDING+KERNEL_RADIUS; i++) {
+      for (var j: u32 = TILE_PADDING-KERNEL_RADIUS; j <= TILE_PADDING+KERNEL_RADIUS; j++) {
 
         weight_idx += in_channel_begin;
         for (var in_c: u32 = in_channel_begin; in_c < in_channel_end; in_c++) {
@@ -112,6 +113,12 @@ fn sample_global(x: i32, y: i32) -> array<f32, IN_CHANNELS> {
   }
 }
 
+fn ReLU(result: ptr<function, array<f32, OUT_CHANNELS>>) {
+  for (var i = 0u; i < OUT_CHANNELS; i++) {
+    (*result)[i] = max(0, (*result)[i]);
+  }
+}
+
 @compute @workgroup_size(BLOCK_SIZE, BLOCK_SIZE)
 fn main(
   @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
@@ -141,16 +148,22 @@ fn main(
   var result = conv1Bias;
 
   for (var pass_idx: u32 = 0; pass_idx < PASSES; pass_idx++) {
-    // Since `tile` is a 3x3 grid of 8x8 tiles, we are filling each of the 9 tiles.
-    for (var x = 0u; x < 3u; x++) {
-      for (var y = 0u; y < 3u; y++) {
-        let tile_idx_x = lid.x + x * 8;
-        let tile_idx_y = lid.y + y * 8;
+    // // Since `tile` is a 3x3 grid of 8x8 tiles, we are filling each of the 9 tiles.
+    let offset = pass_idx * CHANNELS_PER_TILE;
+    let limit = min(offset + CHANNELS_PER_TILE, IN_CHANNELS);
 
-        let offset = pass_idx * CHANNELS_PER_TILE;
-        let limit = min(offset + CHANNELS_PER_TILE, IN_CHANNELS);
-        for (var i = 0u; i < limit - offset; i++) {
-          tile[tile_idx_x][tile_idx_y][i] = whole_samples[x][y][i + offset];
+    for (var in_channel = 0u; in_channel < limit - offset; in_channel++) {
+      for (var x = 0u; x < 3u; x++) {
+        for (var y = 0u; y < 3u; y++) {
+          let tile_idx_x = TILE_PADDING - i32(BLOCK_SIZE) + i32(x) * BLOCK_SIZE + i32(lid.x);
+          let tile_idx_y = TILE_PADDING - i32(BLOCK_SIZE) + i32(y) * BLOCK_SIZE + i32(lid.y);
+
+          if (
+            tile_idx_x >= 0 && tile_idx_x < BLOCK_SIZE + TILE_PADDING * 2 &&
+            tile_idx_y >= 0 && tile_idx_y < BLOCK_SIZE + TILE_PADDING * 2
+          ) {
+            tile[tile_idx_x][tile_idx_y][in_channel] = whole_samples[x][y][in_channel + offset];
+          }
         }
       }
     }
@@ -161,22 +174,19 @@ fn main(
     // convolve(lid, 0, IN_CHANNELS, &result);
     convolve_global(coord, 0, IN_CHANNELS, &result);
 
+    if (RELU) {
+      ReLU(&result);
+    }
+
     // Waiting until we use stop convolving, to swap the tile.
     workgroupBarrier();
   }
 
-  // let index =
-  //   coord.y * uniforms.canvasSize.x +
-  //   coord.x;
-  
-  // outputBuffer[index] = result[0];
+  let outputBufferBegin =
+    coord.y * uniforms.canvasSize.x * OUT_CHANNELS +
+    coord.x * OUT_CHANNELS;
 
   for (var i: u32 = 0; i < OUT_CHANNELS; i++) {
-    let index =
-      coord.y * uniforms.canvasSize.x * OUT_CHANNELS +
-      coord.x * OUT_CHANNELS +
-      i;
-    
-    outputBuffer[index] = result[i];
+    outputBuffer[outputBufferBegin + i] = result[i];
   }
 }

@@ -7,7 +7,7 @@ import { SceneSchema } from './schema/scene';
 import { NetworkLayer } from './networkLayer';
 import { preprocessShaderCode } from './preprocessShaderCode';
 
-const blockDim = 4;
+const blockDim = 8;
 
 type Options = {
   device: GPUDevice;
@@ -24,13 +24,15 @@ export const MenderStep = ({
 
   const firstWorkBuffer = device.createBuffer({
     label: 'First Work Buffer',
-    size: gBuffer.size[0] * gBuffer.size[1] * 64 * Float32Array.BYTES_PER_ELEMENT,
+    size:
+      gBuffer.size[0] * gBuffer.size[1] * 64 * Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.STORAGE,
   });
-  
+
   const secondWorkBuffer = device.createBuffer({
     label: 'Second Work Buffer',
-    size: gBuffer.size[0] * gBuffer.size[1] * 32 * Float32Array.BYTES_PER_ELEMENT,
+    size:
+      gBuffer.size[0] * gBuffer.size[1] * 32 * Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.STORAGE,
   });
 
@@ -125,7 +127,11 @@ export const MenderStep = ({
     device.createComputePipeline({
       label: 'Layer #1 Pipeline',
       layout: device.createPipelineLayout({
-        bindGroupLayouts: [uniformBindGroupLayout, ioBindGroupLayout, convLayers[0].bindGroupLayout]
+        bindGroupLayouts: [
+          uniformBindGroupLayout,
+          ioBindGroupLayout,
+          convLayers[0].bindGroupLayout,
+        ],
       }),
       compute: {
         module: device.createShaderModule({
@@ -144,7 +150,11 @@ export const MenderStep = ({
     device.createComputePipeline({
       label: 'Layer #2 Pipeline',
       layout: device.createPipelineLayout({
-        bindGroupLayouts: [uniformBindGroupLayout, ioBindGroupLayout, convLayers[1].bindGroupLayout]
+        bindGroupLayouts: [
+          uniformBindGroupLayout,
+          ioBindGroupLayout,
+          convLayers[1].bindGroupLayout,
+        ],
       }),
       compute: {
         module: device.createShaderModule({
@@ -163,7 +173,11 @@ export const MenderStep = ({
     device.createComputePipeline({
       label: 'Layer #3 Pipeline',
       layout: device.createPipelineLayout({
-        bindGroupLayouts: [uniformBindGroupLayout, ioBindGroupLayout, convLayers[2].bindGroupLayout]
+        bindGroupLayouts: [
+          uniformBindGroupLayout,
+          ioBindGroupLayout,
+          convLayers[2].bindGroupLayout,
+        ],
       }),
       compute: {
         module: device.createShaderModule({
@@ -213,25 +227,28 @@ export const MenderStep = ({
             buffer: firstWorkBuffer,
           },
         },
-        // UNUSED
+
+        // UNUSED inputBuffer
         {
           binding: 1,
           resource: { buffer: secondWorkBuffer },
-        }
+        },
       ],
     }),
     device.createBindGroup({
       label: 'Layer #2 IO BindGroup',
       layout: ioBindGroupLayout,
       entries: [
+        // inputBuffer
         {
-          binding: 0,
+          binding: 1,
           resource: {
             buffer: firstWorkBuffer,
           },
         },
+        // outputBuffer
         {
-          binding: 1,
+          binding: 0,
           resource: {
             buffer: secondWorkBuffer,
           },
@@ -253,14 +270,16 @@ export const MenderStep = ({
       label: 'Layer #3 IO BindGroup',
       layout: ioBindGroupLayout,
       entries: [
+        // inputBuffer
         {
-          binding: 0,
+          binding: 1,
           resource: {
             buffer: secondWorkBuffer,
           },
         },
+        // outputBuffer
         {
-          binding: 1,
+          binding: 0,
           resource: {
             buffer: menderResultBuffer,
           },
@@ -291,11 +310,11 @@ export const MenderStep = ({
         computePass.setBindGroup(2, convLayers[i].bindGroup);
         computePass.dispatchWorkgroups(
           Math.ceil(gBuffer.size[0] / blockDim),
-          Math.ceil(gBuffer.size[1] / blockDim)
+          Math.ceil(gBuffer.size[1] / blockDim),
         );
       }
 
       computePass.end();
-    }
+    },
   };
-}
+};
