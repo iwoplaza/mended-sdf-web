@@ -2,11 +2,12 @@ import './style.css';
 
 import { GBuffer } from './gBuffer';
 // import { GBufferStep } from './gBufferStep';
-// import { GBufferDebugger } from './gBufferDebugger';
+import { GBufferDebugger } from './gBufferDebugger';
 import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 import { MenderStep } from './menderStep';
 import { FPSCounter } from './fpsCounter';
 import { PostProcessingStep } from './postProcessingStep';
+import { EdgeDetectionStep } from './edgeDetectionStep';
 
 new FPSCounter(document.getElementById('fps-counter')!);
 
@@ -48,13 +49,14 @@ async function main() {
 
   // const gBufferStep = new GBufferStep(device, gBuffer);
   const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
+  const edgeDetectionStep = EdgeDetectionStep({ device, gBuffer, menderResultBuffer });
   const menderStep = MenderStep({ device, gBuffer, menderResultBuffer });
   
-  // const gBufferDebugger = new GBufferDebugger(
-  //   device,
-  //   presentationFormat,
-  //   gBuffer,
-  // );
+  const gBufferDebugger = new GBufferDebugger(
+    device,
+    presentationFormat,
+    gBuffer,
+  );
   const postProcessing = PostProcessingStep({ device, context, gBuffer, presentationFormat, menderResultBuffer });
 
   context.configure({
@@ -69,6 +71,7 @@ async function main() {
     // gBufferStep.perform(commandEncoder);
     gBufferMeshRenderer.perform(device, commandEncoder);
 
+    edgeDetectionStep.perform(commandEncoder);
     // menderStep.perform(commandEncoder);
     // gBufferDebugger.perform(context, commandEncoder);
 

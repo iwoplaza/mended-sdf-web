@@ -7,7 +7,7 @@ import { SceneSchema } from './schema/scene';
 import { NetworkLayer } from './networkLayer';
 import { preprocessShaderCode } from './preprocessShaderCode';
 
-const blockDim = 8;
+const blockDim = 4;
 
 type Options = {
   device: GPUDevice;

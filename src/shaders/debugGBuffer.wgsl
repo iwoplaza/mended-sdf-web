@@ -13,8 +13,8 @@ struct Uniforms {
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var blurredAndAlbedo: texture_2d<f32>;
-@group(0) @binding(2) var normalsAndDepth: texture_2d<f32>;
+@group(0) @binding(1) var blurredTex: texture_2d<f32>;
+@group(0) @binding(2) var auxTex: texture_2d<f32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -33,40 +33,53 @@ fn main_vert(
 
 @fragment
 fn main_frag(
-  @builtin(position) coord : vec4<f32>
+  @builtin(position) coord_f : vec4<f32>
 ) -> @location(0) vec4<f32> {
+  let coord = vec2<i32>(floor(coord_f.xy));
+
+  let blurred = textureLoad(
+    blurredTex,
+    coord,
+    0
+  );
+
+  let aux = textureLoad(
+    auxTex,
+    coord,
+    0
+  );
+
   var result: vec4<f32>;
 
-  let c = coord.xy / vec2<f32>(uniforms.canvasSize);
+  let c = coord_f.xy / vec2<f32>(uniforms.canvasSize);
   // let c = coord.xy / vec2<f32>(512, 512);
   if (c.x < 0.33) {
-    result = textureLoad(
-      normalsAndDepth,
-      vec2<i32>(floor(coord.xy)),
-      0
+    // NORMALS
+
+    result = vec4(
+      (aux.y + 1.0) * 0.5, // normal.x
+      (aux.z + 1.0) * 0.5, // normal.y
+      0.5,
+      1.0,
     );
-    result.x = (result.x + 1.0) * 0.5;
-    result.y = (result.y + 1.0) * 0.5;
-    result.z = (result.z + 1.0) * 0.5;
-    result.a = 1.0;
   }
   else if (c.x < 0.66) {
-    result = textureLoad(
-      normalsAndDepth,
-      vec2<i32>(floor(coord.xy)),
-      0
+    // DEPTH
+
+    let depth = aux.x;
+    result = vec4(
+      depth,
+      depth,
+      depth,
+      1.0,
     );
-    let depth = result.a;
-    result.x = depth;
-    result.y = depth;
-    result.z = depth;
-    result.a = 1.0;
   }
   else {
-    result = textureLoad(
-      blurredAndAlbedo,
-      vec2<i32>(floor(coord.xy)),
-      0
+    // BLURRED
+
+    result = vec4(
+      blurred.rgb,
+      1.0,
     );
   }
 

@@ -47,8 +47,29 @@ fn convolve(local: vec2u, in_channel_begin: u32, in_channel_end: u32, result: pt
   }
 }
 
+fn convolve_global(coord: vec2u, in_channel_begin: u32, in_channel_end: u32, result: ptr<function, array<f32, OUT_CHANNELS>>) {
+  var weight_idx: u32 = 0;
+  for (var out_c: u32 = 0; out_c < OUT_CHANNELS; out_c++) {
+    for (var i: u32 = 4-KERNEL_RADIUS; i <= 4+KERNEL_RADIUS; i++) {
+      for (var j: u32 = 4-KERNEL_RADIUS; j <= 4+KERNEL_RADIUS; j++) {
+        let sample = sample_global(coord.x + i, coord.y + j);
+
+        weight_idx += in_channel_begin;
+        for (var in_c: u32 = in_channel_begin; in_c < in_channel_end; in_c++) {
+          (*result)[out_c] += sample[in_c] * conv1Weight[weight_idx];
+          weight_idx++;
+        }
+        weight_idx += IN_CHANNELS - in_channel_end;
+      }
+    }
+  }
+}
+
 fn sample_global(x: u32, y: u32) -> array<f32, IN_CHANNELS> {
-  let coord = vec2u(x, y);
+  let coord = vec2u(
+    max(0, min(x, uniforms.canvasSize.x - 1)),
+    max(0, min(y, uniforms.canvasSize.y - 1)),
+  );
 
   if (INPUT_FROM_GBUFFER) {
     let blurred = textureLoad(
@@ -91,9 +112,8 @@ fn sample_global(x: u32, y: u32) -> array<f32, IN_CHANNELS> {
   }
 }
 
-@compute @workgroup_size(8, 8, 1)
+@compute @workgroup_size(BLOCK_SIZE, BLOCK_SIZE)
 fn main(
-  @builtin(workgroup_id) WorkGroupID: vec3<u32>,
   @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
   @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
 ) {
@@ -102,19 +122,19 @@ fn main(
 
   let whole_samples = array<array<array<f32, IN_CHANNELS>, 3>, 3>(
     array<array<f32, IN_CHANNELS>, 3>(
+      sample_global(coord.x - BLOCK_SIZE, coord.y - BLOCK_SIZE),
+      sample_global(coord.x - BLOCK_SIZE, coord.y),
+      sample_global(coord.x - BLOCK_SIZE, coord.y + BLOCK_SIZE),
+    ),
+    array<array<f32, IN_CHANNELS>, 3>(
+      sample_global(coord.x, coord.y - BLOCK_SIZE),
       sample_global(coord.x, coord.y),
-      sample_global(coord.x, coord.y + 8),
-      sample_global(coord.x, coord.y + 16),
+      sample_global(coord.x, coord.y + BLOCK_SIZE),
     ),
     array<array<f32, IN_CHANNELS>, 3>(
-      sample_global(coord.x + 8, coord.y),
-      sample_global(coord.x + 8, coord.y + 8),
-      sample_global(coord.x + 8, coord.y + 16),
-    ),
-    array<array<f32, IN_CHANNELS>, 3>(
-      sample_global(coord.x + 16, coord.y),
-      sample_global(coord.x + 16, coord.y + 8),
-      sample_global(coord.x + 16, coord.y + 16),
+      sample_global(coord.x + BLOCK_SIZE, coord.y - BLOCK_SIZE),
+      sample_global(coord.x + BLOCK_SIZE, coord.y),
+      sample_global(coord.x + BLOCK_SIZE, coord.y + BLOCK_SIZE),
     ),
   );
 
@@ -138,18 +158,25 @@ fn main(
     // Waiting for the whole shared memory to be filled.
     workgroupBarrier();
 
-    convolve(lid, 0, IN_CHANNELS, &result);
+    // convolve(lid, 0, IN_CHANNELS, &result);
+    convolve_global(coord, 0, IN_CHANNELS, &result);
 
     // Waiting until we use stop convolving, to swap the tile.
     workgroupBarrier();
   }
 
-  for (var i: u32 = 0; i < IN_CHANNELS; i++) {
+  // let index =
+  //   coord.y * uniforms.canvasSize.x +
+  //   coord.x;
+  
+  // outputBuffer[index] = result[0];
+
+  for (var i: u32 = 0; i < OUT_CHANNELS; i++) {
     let index =
-      coord.y * uniforms.canvasSize.x * IN_CHANNELS +
-      coord.x * IN_CHANNELS +
+      coord.y * uniforms.canvasSize.x * OUT_CHANNELS +
+      coord.x * OUT_CHANNELS +
       i;
-      
+    
     outputBuffer[index] = result[i];
   }
 }
