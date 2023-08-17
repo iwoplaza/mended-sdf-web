@@ -1,4 +1,5 @@
 import { BufferWriter } from 'typed-binary';
+
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
 import fullScreenQuadWGSL from './shaders/fullScreenQuad.wgsl?raw';
@@ -8,11 +9,11 @@ type Options = {
   device: GPUDevice;
   context: GPUCanvasContext;
   presentationFormat: GPUTextureFormat;
-  gBuffer: GBuffer,
-  menderResultBuffer: GPUBuffer,
+  gBuffer: GBuffer;
+  menderResultBuffer: GPUBuffer;
 };
 
-export const PostProcessingStep = (({
+export const PostProcessingStep = ({
   device,
   context,
   presentationFormat,
@@ -24,7 +25,7 @@ export const PostProcessingStep = (({
   //
 
   const scene = {
-    canvasSize: [gBuffer.size[0], gBuffer.size[1]] as [number, number],
+    canvasSize: gBuffer.size,
   };
 
   const sceneUniformBuffer = device.createBuffer({
@@ -44,7 +45,7 @@ export const PostProcessingStep = (({
     0,
     sceneUniformData.byteLength,
   );
-  
+
   //
 
   const fullScreenQuadShader = device.createShaderModule({
@@ -67,9 +68,7 @@ export const PostProcessingStep = (({
     fragment: {
       module: postProcessShader,
       entryPoint: 'main',
-      targets: [
-        { format: presentationFormat },
-      ],
+      targets: [{ format: presentationFormat }],
     },
   });
 
@@ -95,7 +94,7 @@ export const PostProcessingStep = (({
       },
       {
         binding: 1,
-        resource: gBuffer.blurredView,
+        resource: gBuffer.upscaledView,
       },
       {
         binding: 2,
@@ -117,6 +116,6 @@ export const PostProcessingStep = (({
       pass.setBindGroup(0, bindGroup);
       pass.draw(6);
       pass.end();
-    }
+    },
   };
-});
+};

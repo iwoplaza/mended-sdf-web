@@ -1,6 +1,7 @@
 import { mat4 } from 'wgpu-matrix';
 
 import renderMeshGBufferWGSL from './shaders/renderMeshGBuffer.wgsl?raw';
+import renderAuxGBufferWGSL from './shaders/renderAuxGBuffer.wgsl?raw';
 import { Camera } from './camera';
 import { GBuffer } from './gBuffer';
 import { StanfordDragon } from './models/stanfordDragon';
@@ -34,8 +35,10 @@ const vertexBufferLayouts: Iterable<GPUVertexBufferLayout> = [
 ];
 
 export class GBufferMeshRenderer {
-  writePipeline: GPURenderPipeline;
+  writeBlurredPipeline: GPURenderPipeline;
+  writeAuxPipeline: GPURenderPipeline;
   passDescriptor: GPURenderPassDescriptor;
+  auxPassDescriptor: GPURenderPassDescriptor;
   sceneUniformBindGroup: GPUBindGroup;
 
   camera: Camera;
@@ -48,7 +51,13 @@ export class GBufferMeshRenderer {
     this.dragon = new StanfordDragon(device);
 
     const depthTexture = device.createTexture({
-      size: [gBuffer.size[0], gBuffer.size[1]],
+      size: gBuffer.quarterSize,
+      format: 'depth16unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    const auxDepthTexture = device.createTexture({
+      size: gBuffer.size,
       format: 'depth16unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
@@ -56,16 +65,9 @@ export class GBufferMeshRenderer {
     this.passDescriptor = {
       colorAttachments: [
         {
-          view: gBuffer.blurredView,
+          view: gBuffer.quarterView,
 
           clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-        {
-          view: gBuffer.auxView,
-
-          clearValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
           loadOp: 'clear',
           storeOp: 'store',
         },
@@ -79,28 +81,36 @@ export class GBufferMeshRenderer {
       },
     };
 
-    const writeGBufferShader = device.createShaderModule({
-      label: 'Mesh Renderer',
+    this.auxPassDescriptor = {
+      colorAttachments: [
+        {
+          view: gBuffer.auxView,
+
+          clearValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+      depthStencilAttachment: {
+        view: auxDepthTexture.createView(),
+
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    };
+
+    const writeBlurredShader = device.createShaderModule({
+      label: 'Mesh Renderer (Blurred)',
       code: renderMeshGBufferWGSL,
     });
 
-    this.writePipeline = device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module: writeGBufferShader,
-        entryPoint: 'main_vert',
-        buffers: vertexBufferLayouts,
-      },
-      fragment: {
-        module: writeGBufferShader,
-        entryPoint: 'main_frag',
-        targets: [
-          // albedo
-          { format: 'rgba8unorm' },
-          // normal
-          { format: 'rgba16float' },
-        ],
-      },
+    const writeAuxShader = device.createShaderModule({
+      label: 'Mesh Renderer (Aux)',
+      code: renderAuxGBufferWGSL,
+    });
+
+    const commonPipelineOptions = {
       depthStencil: {
         depthWriteEnabled: true,
         depthCompare: 'less',
@@ -109,6 +119,73 @@ export class GBufferMeshRenderer {
       primitive: {
         topology: 'triangle-list',
         cullMode: 'back',
+      },
+    } as const;
+
+    const layout = device.createBindGroupLayout({
+      label: 'GBuffer Mesh Renderer Layout',
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: {
+            type: 'uniform',
+          },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: {
+            type: 'uniform',
+          },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: {
+            type: 'uniform',
+          },
+        },
+      ],
+    });
+
+    this.writeBlurredPipeline = device.createRenderPipeline({
+      ...commonPipelineOptions,
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [layout],
+      }),
+      vertex: {
+        module: writeBlurredShader,
+        entryPoint: 'main_vert',
+        buffers: vertexBufferLayouts,
+      },
+      fragment: {
+        module: writeBlurredShader,
+        entryPoint: 'main_frag',
+        targets: [
+          // albedo
+          { format: 'rgba8unorm' },
+        ],
+      },
+    });
+
+    this.writeAuxPipeline = device.createRenderPipeline({
+      ...commonPipelineOptions,
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [layout],
+      }),
+      vertex: {
+        module: writeAuxShader,
+        entryPoint: 'main_vert',
+        buffers: vertexBufferLayouts,
+      },
+      fragment: {
+        module: writeAuxShader,
+        entryPoint: 'main_frag',
+        targets: [
+          // normal
+          { format: 'rgba16float' },
+        ],
       },
     });
 
@@ -136,7 +213,7 @@ export class GBufferMeshRenderer {
     });
 
     this.sceneUniformBindGroup = device.createBindGroup({
-      layout: this.writePipeline.getBindGroupLayout(0),
+      layout: this.writeBlurredPipeline.getBindGroupLayout(0),
       entries: [
         {
           binding: 0,
@@ -189,13 +266,22 @@ export class GBufferMeshRenderer {
   perform(device: GPUDevice, commandEncoder: GPUCommandEncoder) {
     this.camera.writeToBuffer(device, this.cameraUniformBuffer, 0);
 
-    // Write position, normal, albedo etc. data to gBuffers
+    // Write quarter-resolution image to gBuffers
     const gBufferPass = commandEncoder.beginRenderPass(this.passDescriptor);
-    gBufferPass.setPipeline(this.writePipeline);
+    gBufferPass.setPipeline(this.writeBlurredPipeline);
     gBufferPass.setBindGroup(0, this.sceneUniformBindGroup);
 
     this.dragon.draw(gBufferPass);
 
     gBufferPass.end();
+
+    // Write position, normal, albedo etc. data to gBuffers
+    const auxPass = commandEncoder.beginRenderPass(this.auxPassDescriptor);
+    auxPass.setPipeline(this.writeAuxPipeline);
+    auxPass.setBindGroup(0, this.sceneUniformBindGroup);
+
+    this.dragon.draw(auxPass);
+
+    auxPass.end();
   }
 }

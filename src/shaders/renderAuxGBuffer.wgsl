@@ -40,7 +40,7 @@ fn main_vert(
 }
 
 struct GBufferOutput {
-  @location(0) blurred: vec4<f32>,
+  @location(0) aux: vec4<f32>,
 }
 
 const lightDir = vec3f(0.0, 1.0, 0.0);
@@ -65,7 +65,11 @@ fn main_frag(
   let color = vec3f(c, c, c) * (diffuse * att + ambient);
 
   var output: GBufferOutput;
-  output.blurred = vec4(color, 1.0);
+  output.aux = vec4(
+    fragDepth / (1.0 + fragDepth), // depth
+    viewNormal.xy,                 // normal.xy
+    c                              // luminance
+  );
 
   return output;
 }

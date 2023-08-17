@@ -1,8 +1,10 @@
 export class GBuffer {
-  blurredTexture: GPUTexture;
+  quarterTexture: GPUTexture;
+  upscaledTexture: GPUTexture;
   auxTexture: GPUTexture;
 
-  blurredView: GPUTextureView;
+  quarterView: GPUTextureView;
+  upscaledView: GPUTextureView;
   auxView: GPUTextureView;
 
   targets = [
@@ -12,9 +14,20 @@ export class GBuffer {
     { format: 'rgba16float' },
   ] as const;
 
+  quarterSize: [number, number];
+
   constructor(device: GPUDevice, private _size: [number, number]) {
-    this.blurredTexture = device.createTexture({
-      size: _size,
+    this.quarterSize = [Math.floor(_size[0] / 4), Math.floor(_size[1] / 4)];
+
+    this.quarterTexture = device.createTexture({
+      size: this.quarterSize,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      format: 'rgba8unorm',
+    });
+
+    this.upscaledTexture = device.createTexture({
+      size: this.size,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       format: 'rgba8unorm',
@@ -27,7 +40,8 @@ export class GBuffer {
       format: 'rgba16float',
     });
 
-    this.blurredView = this.blurredTexture.createView();
+    this.quarterView = this.quarterTexture.createView();
+    this.upscaledView = this.upscaledTexture.createView();
     this.auxView = this.auxTexture.createView();
   }
 

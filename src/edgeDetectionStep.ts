@@ -163,7 +163,7 @@ export const EdgeDetectionStep = ({
       // blurredTex
       {
         binding: 2,
-        resource: gBuffer.blurredView,
+        resource: gBuffer.upscaledView,
       },
       // auxTex
       {

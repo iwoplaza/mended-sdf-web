@@ -8,6 +8,7 @@ import { MenderStep } from './menderStep';
 import { FPSCounter } from './fpsCounter';
 import { PostProcessingStep } from './postProcessingStep';
 import { EdgeDetectionStep } from './edgeDetectionStep';
+import { ResampleStep } from './resampleStep/resampleStep';
 
 new FPSCounter(document.getElementById('fps-counter')!);
 
@@ -48,14 +49,22 @@ async function main() {
 
   //
 
-  // const gBufferStep = new GBufferStep(device, gBuffer);
   const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
+
+  const upscaleStep = ResampleStep({
+    device,
+    context,
+    targetFormat: 'rgba8unorm',
+    sourceTexture: gBuffer.quarterView,
+    targetTexture: gBuffer.upscaledView,
+  });
+
   const edgeDetectionStep = EdgeDetectionStep({
     device,
     gBuffer,
     menderResultBuffer,
   });
-  const menderStep = MenderStep({ device, gBuffer, menderResultBuffer });
+  // const menderStep = MenderStep({ device, gBuffer, menderResultBuffer });
 
   const gBufferDebugger = new GBufferDebugger(
     device,
@@ -79,14 +88,15 @@ async function main() {
   function frame() {
     const commandEncoder = device.createCommandEncoder();
 
-    // gBufferStep.perform(commandEncoder);
     gBufferMeshRenderer.perform(device, commandEncoder);
 
-    // edgeDetectionStep.perform(commandEncoder);
-    menderStep.perform(commandEncoder);
+    upscaleStep.perform(commandEncoder);
 
-    postProcessing.perform(commandEncoder);
-    // gBufferDebugger.perform(context, commandEncoder);
+    // edgeDetectionStep.perform(commandEncoder);
+    // menderStep.perform(commandEncoder);
+
+    // postProcessing.perform(commandEncoder);
+    gBufferDebugger.perform(context, commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
     requestAnimationFrame(frame);

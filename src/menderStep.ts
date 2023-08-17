@@ -109,7 +109,7 @@ export const MenderStep = ({
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
         texture: {
-          sampleType: 'unfilterable-float',
+          sampleType: 'uint',
         },
       },
       // auxTex
@@ -213,7 +213,7 @@ export const MenderStep = ({
         // blurredTex
         {
           binding: 2,
-          resource: gBuffer.blurredView,
+          resource: gBuffer.upscaledView,
         },
         // auxTex
         {
@@ -257,7 +257,7 @@ export const MenderStep = ({
         // UNUSED blurredTex
         {
           binding: 2,
-          resource: gBuffer.blurredView,
+          resource: gBuffer.upscaledView,
         },
         // UNUSED auxTex
         {
@@ -288,7 +288,7 @@ export const MenderStep = ({
         // UNUSED blurredTex
         {
           binding: 2,
-          resource: gBuffer.blurredView,
+          resource: gBuffer.upscaledView,
         },
         // UNUSED auxTex
         {

@@ -33,7 +33,7 @@ export class GBufferDebugger {
     //
 
     const scene = {
-      canvasSize: [gBuffer.size[0], gBuffer.size[1]] as [number, number],
+      canvasSize: gBuffer.size,
     };
 
     const sceneUniformBuffer = device.createBuffer({
@@ -116,7 +116,7 @@ export class GBufferDebugger {
         },
         {
           binding: 1,
-          resource: gBuffer.blurredView,
+          resource: gBuffer.upscaledView,
         },
         {
           binding: 2,
