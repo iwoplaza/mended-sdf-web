@@ -1,20 +1,13 @@
-import './style.css';
-
-import { GBuffer } from './gBuffer';
-// import { GBufferStep } from './gBufferStep';
+import { EdgeDetectionStep } from './edgeDetectionStep';
 import { GBufferDebugger } from './gBufferDebugger';
 import { GBufferMeshRenderer } from './gBufferMeshRenderer';
-import { MenderStep } from './menderStep';
-import { FPSCounter } from './fpsCounter';
 import { PostProcessingStep } from './postProcessingStep';
-import { EdgeDetectionStep } from './edgeDetectionStep';
 import { ResampleStep } from './resampleStep/resampleStep';
+import { store } from '../store';
+import { GBuffer } from '../gBuffer';
+import { showPartialRendersAtom } from '../DebugOptions';
 
-new FPSCounter(document.getElementById('fps-counter')!);
-
-async function main() {
-  const canvas = document.getElementById('canvas') as HTMLCanvasElement;
-
+export const GameEngine = async (canvas: HTMLCanvasElement) => {
   const adapter = await navigator.gpu.requestAdapter();
 
   if (!adapter) {
@@ -88,21 +81,26 @@ async function main() {
   function frame() {
     const commandEncoder = device.createCommandEncoder();
 
+    // -- Rendering the whole scene & aux.
     gBufferMeshRenderer.perform(device, commandEncoder);
 
+    // -- Upscaling the quarter-resolution render.
     upscaleStep.perform(commandEncoder);
 
-    // edgeDetectionStep.perform(commandEncoder);
+    // -- Restoring quality to the render using convolution.
+    edgeDetectionStep.perform(commandEncoder);
     // menderStep.perform(commandEncoder);
 
-    // postProcessing.perform(commandEncoder);
-    gBufferDebugger.perform(context, commandEncoder);
+    // -- Displaying a result to the screen.
+    if (store.get(showPartialRendersAtom)) {
+      gBufferDebugger.perform(context, commandEncoder);
+    } else {
+      postProcessing.perform(commandEncoder);
+    }
 
     device.queue.submit([commandEncoder.finish()]);
     requestAnimationFrame(frame);
   }
 
   requestAnimationFrame(frame);
-}
-
-main();
+};

@@ -1,12 +1,12 @@
 import { mat4 } from 'wgpu-matrix';
 
-import renderMeshGBufferWGSL from './shaders/renderMeshGBuffer.wgsl?raw';
-import renderAuxGBufferWGSL from './shaders/renderAuxGBuffer.wgsl?raw';
-import { Camera } from './camera';
-import { GBuffer } from './gBuffer';
-import { StanfordDragon } from './models/stanfordDragon';
-import { store } from './store';
-import { projectionMatrixAtom } from './projection';
+import renderMeshGBufferWGSL from '../shaders/renderMeshGBuffer.wgsl?raw';
+import renderAuxGBufferWGSL from '../shaders/renderAuxGBuffer.wgsl?raw';
+import { Camera } from '../camera';
+import { GBuffer } from '../gBuffer';
+import { StanfordDragon } from '../models/stanfordDragon';
+import { store } from '../store';
+import { projectionMatrixAtom } from '../projection';
 
 const vertexBufferLayouts: Iterable<GPUVertexBufferLayout> = [
   {

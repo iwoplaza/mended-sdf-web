@@ -1,9 +1,9 @@
 import { BufferWriter } from 'typed-binary';
 
-import { GBuffer } from './gBuffer';
-import { SceneSchema } from './schema/scene';
-import fullScreenQuadWGSL from './shaders/fullScreenQuad.wgsl?raw';
-import postProcessWGSL from './shaders/postProcess.wgsl?raw';
+import { GBuffer } from '../gBuffer';
+import { SceneSchema } from '../schema/scene';
+import fullScreenQuadWGSL from '../shaders/fullScreenQuad.wgsl?raw';
+import postProcessWGSL from '../shaders/postProcess.wgsl?raw';
 
 type Options = {
   device: GPUDevice;

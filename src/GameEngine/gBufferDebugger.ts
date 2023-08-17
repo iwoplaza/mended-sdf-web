@@ -1,8 +1,8 @@
 import { BufferWriter } from 'typed-binary';
 
-import { GBuffer } from './gBuffer';
-import { SceneSchema } from './schema/scene';
-import debugGBufferWGSL from './shaders/debugGBuffer.wgsl?raw';
+import { GBuffer } from '../gBuffer';
+import { SceneSchema } from '../schema/scene';
+import debugGBufferWGSL from '../shaders/debugGBuffer.wgsl?raw';
 
 export class GBufferDebugger {
   private _pipeline: GPURenderPipeline;

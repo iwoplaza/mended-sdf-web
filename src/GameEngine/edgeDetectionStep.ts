@@ -1,10 +1,10 @@
 import { BufferWriter } from 'typed-binary';
 
-import menderWGSL from './shaders/convolve.wgsl?raw';
-import { GBuffer } from './gBuffer';
-import { SceneSchema } from './schema/scene';
-import { NetworkLayer } from './networkLayer';
-import { preprocessShaderCode } from './preprocessShaderCode';
+import menderWGSL from '../shaders/convolve.wgsl?raw';
+import { GBuffer } from '../gBuffer';
+import { SceneSchema } from '../schema/scene';
+import { NetworkLayer } from '../networkLayer';
+import { preprocessShaderCode } from '../preprocessShaderCode';
 
 const blockDim = 8;
 

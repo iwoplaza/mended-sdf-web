@@ -1,4 +1,4 @@
-import fullScreenQuadWGSL from '../shaders/fullScreenQuad.wgsl?raw';
+import fullScreenQuadWGSL from '../../shaders/fullScreenQuad.wgsl?raw';
 import resampleWGSL from './resample.wgsl?raw';
 
 type Options = {
