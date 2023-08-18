@@ -6,6 +6,7 @@ import { ResampleStep } from './resampleStep/resampleStep';
 import { store } from '../store';
 import { GBuffer } from '../gBuffer';
 import { showPartialRendersAtom } from '../DebugOptions';
+import { MenderStep } from '../menderStep';
 
 export const GameEngine = async (canvas: HTMLCanvasElement) => {
   const adapter = await navigator.gpu.requestAdapter();
@@ -46,7 +47,7 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
 
   const upscaleStep = ResampleStep({
     device,
-    context,
+    sourceSize: gBuffer.quarterSize,
     targetFormat: 'rgba8unorm',
     sourceTexture: gBuffer.quarterView,
     targetTexture: gBuffer.upscaledView,
@@ -57,7 +58,7 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
     gBuffer,
     menderResultBuffer,
   });
-  // const menderStep = MenderStep({ device, gBuffer, menderResultBuffer });
+  const menderStep = MenderStep({ device, gBuffer, menderResultBuffer });
 
   const gBufferDebugger = new GBufferDebugger(
     device,
@@ -88,8 +89,8 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
     upscaleStep.perform(commandEncoder);
 
     // -- Restoring quality to the render using convolution.
-    edgeDetectionStep.perform(commandEncoder);
-    // menderStep.perform(commandEncoder);
+    // edgeDetectionStep.perform(commandEncoder);
+    menderStep.perform(commandEncoder);
 
     // -- Displaying a result to the screen.
     if (store.get(showPartialRendersAtom)) {

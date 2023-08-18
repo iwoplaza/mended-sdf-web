@@ -109,7 +109,7 @@ export const MenderStep = ({
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
         texture: {
-          sampleType: 'uint',
+          sampleType: 'unfilterable-float',
         },
       },
       // auxTex

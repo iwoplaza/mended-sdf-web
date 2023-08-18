@@ -1,0 +1,23 @@
+/**
+ * Taken from https://developer.nvidia.com/gpugems/gpugems2/part-iii-high-quality-rendering/chapter-20-fast-third-order-texture-filtering
+ */
+
+float4 bspline_1d_fp(
+  float coord_source: TEXCOORD0,
+  uniform sampler1D tex_source,  // source texture
+  uniform sampler1D tex_hg,      // filter offsets and weights
+  uniform float e_x,             // source texel size
+  uniform float size_source      // source texture size
+) : COLOR {
+  // calc filter texture coordinates where [0,1] is a single texel
+  // (can be done in vertex program instead)
+  float coord_hg = coord_source * size_source – 0.5f;
+  // fetch offsets and weights from filter texture
+  float3 hg_x = tex1D( tex_hg, coord_hg ).xyz;      // determine linear sampling coordinates
+  float coord_source1 = coord_source + hg_x.x * e_x;
+  float coord_source0 = coord_source - hg_x.y * e_x;      // fetch two linearly interpolated inputs
+  float4 tex_source0 = tex1D(tex_source, coord_source0);
+  float4 tex_source1 = tex1D(tex_source, coord_source1);      // weight linear samples
+  tex_source0 = lerp(tex_source0, tex_source1, tex_hg_x.z);
+  return tex_source0;
+}

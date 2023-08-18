@@ -1,0 +1,33 @@
+/**
+ * Taken from https://developer.nvidia.com/gpugems/gpugems2/part-iii-high-quality-rendering/chapter-20-fast-third-order-texture-filtering
+ */
+
+float4 bspline_2d_fp(
+  float2 coord_source: TEXCOORD0,
+  uniform sampler2D tex_source,  // source texture
+  uniform sampler1D tex_hg,      // filter offsets and weights
+  uniform float2 e_x,            // texel size in x direction
+  uniform float2 e_y,            // texel size in y direction
+  uniform float2 size_source     // source texture size
+) : COLOR {
+  // calc filter texture coordinates where [0,1] is a single texel
+  // (can be done in vertex program instead)
+  float2 coord_hg = coord_source * size_source - float2(0.5f, 0.5f);      // fetch offsets and weights from filter texture
+  float3 hg_x = tex1D(tex_hg, coord_hg.x).xyz;
+  float3 hg_y = tex1D(tex_hg, coord_hg.y).xyz;      // determine linear sampling coordinates
+  float2 coord_source10 = coord_source + hg_x.x * e_x;
+  float2 coord_source00 = coord_source - hg_x.y * e_x;
+  float2 coord_source11 = coord_source10 + hg_y.x * e_y;
+  float2 coord_source01 = coord_source00 + hg_y.x * e_y;
+  coord_source10 = coord_source10 - hg_y.y * e_y;
+  coord_source00 = coord_source00 - hg_y.y * e_y;      // fetch four linearly interpolated inputs
+  float4 tex_source00 = tex2D( tex_source, coord_source00 );
+  float4 tex_source10 = tex2D( tex_source, coord_source10 );
+  float4 tex_source01 = tex2D( tex_source, coord_source01 );
+  float4 tex_source11 = tex2D( tex_source, coord_source11 );      // weight along y direction
+  tex_source00 = lerp( tex_source00, tex_source01, hg_y.z );
+  tex_source10 = lerp( tex_source10, tex_source11, hg_y.z );      // weight along x direction
+  tex_source00 = lerp( tex_source00, tex_source10, hg_x.z );
+  
+  return tex_src00;
+} 

@@ -25,10 +25,8 @@ fn main(
     mendedBuffer[buffer_idx * mendedBufferDimension + min(0, mendedBufferDimension - 1)],
     mendedBuffer[buffer_idx * mendedBufferDimension + min(1, mendedBufferDimension - 1)],
     mendedBuffer[buffer_idx * mendedBufferDimension + min(2, mendedBufferDimension - 1)],
-    // mendedBuffer[buffer_idx * 3 + 1],
-    // mendedBuffer[buffer_idx * 3 + 2],
   );
 
-  return vec4f(mended.rgb, 1.0);
-  // return vec4f(blurred.rgb + mended.rgb, 1.0);
+  // return vec4f(abs(mended.rgb), 1.0);
+  return vec4f(blurred.rgb + mended.rgb, 1.0);
 }
