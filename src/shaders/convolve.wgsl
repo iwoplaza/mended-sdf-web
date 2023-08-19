@@ -21,15 +21,16 @@ const TILE_PADDING = 4;
 @group(1) @binding(2) var blurredTex: texture_2d<f32>;
 @group(1) @binding(3) var auxTex: texture_2d<f32>;
 
-@group(2) @binding(0) var<storage, read> conv1Weight: array<f32, WEIGHTS>;
+@group(2) @binding(0) var<storage, read> conv1Weight: array<vec4f, WEIGHTS / 4>;
 @group(2) @binding(1) var<storage, read> conv1Bias: array<f32, OUT_CHANNELS>;
 
 // BLOCK_SIZExBLOCK_SIZE tile extended by 4 pixel padding to accomodate the 9x9 kernel.
 // Layout: Width x Height x Channel
-var<workgroup> tile: array<array<array<f32, IN_CHANNELS>, BLOCK_SIZE + TILE_PADDING * 2>, BLOCK_SIZE + TILE_PADDING * 2>;
+var<workgroup> tile: array<array<array<vec4f, IN_CHANNELS / 4>, BLOCK_SIZE + TILE_PADDING * 2>, BLOCK_SIZE + TILE_PADDING * 2>;
 
 fn convolve(local: vec2u, result: ptr<function, array<f32, OUT_CHANNELS>>) {
   var weight_idx: u32 = 0;
+
   for (var out_c: u32 = 0; out_c < OUT_CHANNELS; out_c++) {
     let result_channel = &(*result)[out_c];
 
@@ -37,8 +38,10 @@ fn convolve(local: vec2u, result: ptr<function, array<f32, OUT_CHANNELS>>) {
       for (var j: u32 = TILE_PADDING-KERNEL_RADIUS; j <= TILE_PADDING+KERNEL_RADIUS; j++) {
         let tile_slice = &(tile[local.x + i][local.y + j]);
 
-        for (var in_c: u32 = 0; in_c < IN_CHANNELS; in_c++) {
-          (*result_channel) += (*tile_slice)[in_c] * conv1Weight[weight_idx];
+        for (var in_c: u32 = 0; in_c < IN_CHANNELS / 4; in_c++) {
+          let some = tile[local.x + i][local.y + j][in_c];
+          (*result_channel) += dot((*tile_slice)[in_c], conv1Weight[weight_idx]);
+          // (*result_channel) = conv1Weight[weight_idx].x * f32(i * j) / 10.0;
           weight_idx++;
         }
       }
@@ -48,13 +51,14 @@ fn convolve(local: vec2u, result: ptr<function, array<f32, OUT_CHANNELS>>) {
 
 fn convolve_global(coord: vec2u, result: ptr<function, array<f32, OUT_CHANNELS>>) {
   var weight_idx: u32 = 0;
+  
   for (var out_c: u32 = 0; out_c < OUT_CHANNELS; out_c++) {
     for (var i: i32 = -i32(KERNEL_RADIUS); i <= i32(KERNEL_RADIUS); i++) {
       for (var j: i32 = -i32(KERNEL_RADIUS); j <= i32(KERNEL_RADIUS); j++) {
         let sample = sample_global(i32(coord.x) + i, i32(coord.y) + j);
 
-        for (var in_c: u32 = 0; in_c < IN_CHANNELS; in_c++) {
-          (*result)[out_c] += sample[in_c] * conv1Weight[weight_idx];
+        for (var in_c: u32 = 0; in_c < IN_CHANNELS / 4; in_c++) {
+          (*result)[out_c] += dot(sample[in_c], conv1Weight[weight_idx]);
           weight_idx++;
         }
       }
@@ -62,7 +66,7 @@ fn convolve_global(coord: vec2u, result: ptr<function, array<f32, OUT_CHANNELS>>
   }
 }
 
-fn sample_global(x: i32, y: i32) -> array<f32, IN_CHANNELS> {
+fn sample_global(x: i32, y: i32) -> array<vec4f, IN_CHANNELS / 4> {
   let coord = vec2u(
     u32(max(0, min(x, i32(uniforms.canvasSize.x) - 1))),
     u32(max(0, min(y, i32(uniforms.canvasSize.y) - 1))),
@@ -81,29 +85,38 @@ fn sample_global(x: i32, y: i32) -> array<f32, IN_CHANNELS> {
       0
     );
 
-    var result = array<f32, IN_CHANNELS>();
+    var result = array<vec4f, IN_CHANNELS / 4>();
 
-    result[0] = blurred.r;
-    result[1] = blurred.g;
-    result[2] = blurred.b;
-    result[3] = aux.r; // depth
-    result[4] = aux.g; // normal.x
-    result[5] = aux.b; // normal.y
-    result[6] = aux.a; // luminance
-    result[7] = 0;     // zero padding
+    result[0] = vec4f(
+      blurred.r,
+      blurred.g,
+      blurred.b,
+      aux.r, // depth
+    );
+    result[1] = vec4f(
+      aux.g, // normal.x
+      aux.b, // normal.y
+      aux.a, // luminance
+      0,     // zero padding
+    );
     
     return result;
   }
   else {
-    var sample = array<f32, IN_CHANNELS>();
+    var sample = array<vec4f, IN_CHANNELS / 4>();
 
-    for (var i: u32 = 0; i < IN_CHANNELS; i++) {
+    for (var i: u32 = 0; i < IN_CHANNELS / 4; i++) {
       let index =
         coord.y * uniforms.canvasSize.x * IN_CHANNELS +
         coord.x * IN_CHANNELS +
-        i;
+        i * 4;
       
-      sample[i] = inputBuffer[index];
+      sample[i] = vec4f(
+        inputBuffer[index],
+        inputBuffer[index + 1],
+        inputBuffer[index + 2],
+        inputBuffer[index + 3],
+      );
     }
 
     return sample;
@@ -124,18 +137,18 @@ fn main(
   let coord = GlobalInvocationID.xy;
   let lid = LocalInvocationID.xy;
 
-  let whole_samples = array<array<array<f32, IN_CHANNELS>, 3>, 3>(
-    array<array<f32, IN_CHANNELS>, 3>(
+  let whole_samples = array<array<array<vec4f, IN_CHANNELS / 4>, 3>, 3>(
+    array<array<vec4f, IN_CHANNELS / 4>, 3>(
       sample_global(i32(coord.x) - BLOCK_SIZE, i32(coord.y) - BLOCK_SIZE),
       sample_global(i32(coord.x) - BLOCK_SIZE, i32(coord.y)),
       sample_global(i32(coord.x) - BLOCK_SIZE, i32(coord.y) + BLOCK_SIZE),
     ),
-    array<array<f32, IN_CHANNELS>, 3>(
+    array<array<vec4f, IN_CHANNELS / 4>, 3>(
       sample_global(i32(coord.x), i32(coord.y) - BLOCK_SIZE),
       sample_global(i32(coord.x), i32(coord.y)),
       sample_global(i32(coord.x), i32(coord.y) + BLOCK_SIZE),
     ),
-    array<array<f32, IN_CHANNELS>, 3>(
+    array<array<vec4f, IN_CHANNELS / 4>, 3>(
       sample_global(i32(coord.x) + BLOCK_SIZE, i32(coord.y) - BLOCK_SIZE),
       sample_global(i32(coord.x) + BLOCK_SIZE, i32(coord.y)),
       sample_global(i32(coord.x) + BLOCK_SIZE, i32(coord.y) + BLOCK_SIZE),
@@ -164,8 +177,8 @@ fn main(
   // Waiting for the whole shared memory to be filled.
   workgroupBarrier();
 
-  convolve(lid, &result);
-  // convolve_global(coord, &result);
+  // convolve(lid, &result);
+  convolve_global(coord, &result);
 
   if (RELU) {
     ReLU(&result);
