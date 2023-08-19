@@ -136,7 +136,7 @@ export const EdgeDetectionStep = ({
         label: 'Edge Detection Shader',
         code: preprocessShaderCode(menderWGSL, {
           KERNEL_RADIUS: '1',
-          IN_CHANNELS: '7',
+          IN_CHANNELS: '8',
           OUT_CHANNELS: '1',
           RELU: 'false',
           INPUT_FROM_GBUFFER: 'true',

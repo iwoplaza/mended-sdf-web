@@ -88,14 +88,14 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
     // -- Upscaling the quarter-resolution render.
     upscaleStep.perform(commandEncoder);
 
-    // -- Restoring quality to the render using convolution.
-    // edgeDetectionStep.perform(commandEncoder);
-    menderStep.perform(commandEncoder);
-
     // -- Displaying a result to the screen.
     if (store.get(showPartialRendersAtom)) {
       gBufferDebugger.perform(context, commandEncoder);
     } else {
+      // -- Restoring quality to the render using convolution.
+      // edgeDetectionStep.perform(commandEncoder);
+      menderStep.perform(commandEncoder);
+
       postProcessing.perform(commandEncoder);
     }
 

@@ -39,11 +39,29 @@ fn main_vert(
   return output;
 }
 
-struct GBufferOutput {
+struct MainOutput {
+  @location(0) color: vec4<f32>,
+}
+
+struct AuxOutput {
   @location(0) aux: vec4<f32>,
 }
 
 const lightDir = vec3f(0.0, 1.0, 0.0);
+
+fn convert_rgb_to_y(rgb: vec3f) -> f32 {
+  return 16./255. + (64.738 * rgb.r + 129.057 * rgb.g + 25.064 * rgb.b) / 255.;
+}
+
+fn compute_albedo(fragUV: vec2f) -> vec3f {
+  // faking some kind of checkerboard texture
+  let uv = floor(30.0 * fragUV);
+  let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
+
+  let color = vec3f(c, c, c);
+
+  return color;
+}
 
 @fragment
 fn main_frag(
@@ -51,24 +69,39 @@ fn main_frag(
   @location(1) fragNormal: vec3<f32>,
   @location(2) fragUV: vec2<f32>,
   @location(3) fragDepth: f32,
-) -> GBufferOutput {
-  // faking some kind of checkerboard texture
-  let uv = floor(30.0 * fragUV);
-  let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
+) -> MainOutput {
+  let albedo = compute_albedo(fragUV);
 
   let normal = normalize(worldNormal);
-  let viewNormal = normalize(fragNormal);
 
   let att = max(0.0, dot(normal, lightDir));
   let diffuse = vec3f(1.0, 0.2, 0.1);
-  let ambient = vec3f(0.1, 0.1, 0.2);
-  let color = vec3f(c, c, c) * (diffuse * att + ambient);
+  let ambient = vec3f(0.3, 0.3, 0.4);
 
-  var output: GBufferOutput;
+  var output: MainOutput;
+  output.color = vec4(albedo * (diffuse * att + ambient), 1.0);
+
+  return output;
+}
+
+
+@fragment
+fn main_aux(
+  @location(0) worldNormal: vec3<f32>,
+  @location(1) fragNormal: vec3<f32>,
+  @location(2) fragUV: vec2<f32>,
+  @location(3) fragDepth: f32,
+) -> AuxOutput {
+  let albedo = compute_albedo(fragUV);
+  let luminance = convert_rgb_to_y(albedo);
+
+  let viewNormal = normalize(fragNormal);
+
+  var output: AuxOutput;
   output.aux = vec4(
     fragDepth / (1.0 + fragDepth), // depth
     viewNormal.xy,                 // normal.xy
-    c                              // luminance
+    luminance                      // luminance
   );
 
   return output;

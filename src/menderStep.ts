@@ -1,13 +1,16 @@
 import { BufferWriter } from 'typed-binary';
 
 import menderWGSL from './shaders/convolve.wgsl?raw';
-import { Model3 } from './model3';
+import { Model4 } from './model4';
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
 import { NetworkLayer } from './networkLayer';
 import { preprocessShaderCode } from './preprocessShaderCode';
 
 const blockDim = 8;
+
+const FIRST_DEPTH = 32;
+const SECOND_DEPTH = 16;
 
 type Options = {
   device: GPUDevice;
@@ -41,9 +44,9 @@ export const MenderStep = ({
   //
 
   const convLayers = [
-    new NetworkLayer(device, Model3.Conv1Weight, Model3.Conv1Bias),
-    new NetworkLayer(device, Model3.Conv2Weight, Model3.Conv2Bias),
-    new NetworkLayer(device, Model3.Conv3Weight, Model3.Conv3Bias),
+    new NetworkLayer(device, Model4.Conv1Weight, Model4.Conv1Bias),
+    new NetworkLayer(device, Model4.Conv2Weight, Model4.Conv2Bias),
+    new NetworkLayer(device, Model4.Conv3Weight, Model4.Conv3Bias),
   ];
 
   //
@@ -138,8 +141,8 @@ export const MenderStep = ({
           label: 'Layer #1 convolutional shader',
           code: preprocessShaderCode(menderWGSL, {
             KERNEL_RADIUS: '4',
-            IN_CHANNELS: '7',
-            OUT_CHANNELS: '64',
+            IN_CHANNELS: '8',
+            OUT_CHANNELS: `${FIRST_DEPTH}`,
             RELU: 'true',
             INPUT_FROM_GBUFFER: 'true',
           }),
@@ -161,8 +164,8 @@ export const MenderStep = ({
           label: 'Layer #2 convolutional shader',
           code: preprocessShaderCode(menderWGSL, {
             KERNEL_RADIUS: '2',
-            IN_CHANNELS: '64',
-            OUT_CHANNELS: '32',
+            IN_CHANNELS: `${FIRST_DEPTH}`,
+            OUT_CHANNELS: `${SECOND_DEPTH}`,
             RELU: 'true',
             INPUT_FROM_GBUFFER: 'false',
           }),
@@ -184,7 +187,7 @@ export const MenderStep = ({
           label: 'Layer #2 convolutional shader',
           code: preprocessShaderCode(menderWGSL, {
             KERNEL_RADIUS: '2',
-            IN_CHANNELS: '32',
+            IN_CHANNELS: `${SECOND_DEPTH}`,
             OUT_CHANNELS: '3',
             RELU: 'false',
             INPUT_FROM_GBUFFER: 'false',

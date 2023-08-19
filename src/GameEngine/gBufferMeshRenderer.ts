@@ -1,7 +1,6 @@
 import { mat4 } from 'wgpu-matrix';
 
-import renderMeshGBufferWGSL from '../shaders/renderMeshGBuffer.wgsl?raw';
-import renderAuxGBufferWGSL from '../shaders/renderAuxGBuffer.wgsl?raw';
+import renderSampleSceneWGSL from '../shaders/renderSampleScene.wgsl?raw';
 import { Camera } from '../camera';
 import { GBuffer } from '../gBuffer';
 import { StanfordDragon } from '../models/stanfordDragon';
@@ -46,7 +45,7 @@ export class GBufferMeshRenderer {
 
   cameraUniformBuffer: GPUBuffer;
 
-  constructor(device: GPUDevice, private gBuffer: GBuffer) {
+  constructor(device: GPUDevice, gBuffer: GBuffer) {
     this.camera = new Camera();
     this.dragon = new StanfordDragon(device);
 
@@ -100,14 +99,9 @@ export class GBufferMeshRenderer {
       },
     };
 
-    const writeBlurredShader = device.createShaderModule({
-      label: 'Mesh Renderer (Blurred)',
-      code: renderMeshGBufferWGSL,
-    });
-
-    const writeAuxShader = device.createShaderModule({
-      label: 'Mesh Renderer (Aux)',
-      code: renderAuxGBufferWGSL,
+    const renderSceneShader = device.createShaderModule({
+      label: 'Mesh Renderer - Render Scene Shader',
+      code: renderSampleSceneWGSL,
     });
 
     const commonPipelineOptions = {
@@ -155,12 +149,12 @@ export class GBufferMeshRenderer {
         bindGroupLayouts: [layout],
       }),
       vertex: {
-        module: writeBlurredShader,
+        module: renderSceneShader,
         entryPoint: 'main_vert',
         buffers: vertexBufferLayouts,
       },
       fragment: {
-        module: writeBlurredShader,
+        module: renderSceneShader,
         entryPoint: 'main_frag',
         targets: [
           // albedo
@@ -175,13 +169,13 @@ export class GBufferMeshRenderer {
         bindGroupLayouts: [layout],
       }),
       vertex: {
-        module: writeAuxShader,
+        module: renderSceneShader,
         entryPoint: 'main_vert',
         buffers: vertexBufferLayouts,
       },
       fragment: {
-        module: writeAuxShader,
-        entryPoint: 'main_frag',
+        module: renderSceneShader,
+        entryPoint: 'main_aux',
         targets: [
           // normal
           { format: 'rgba16float' },
