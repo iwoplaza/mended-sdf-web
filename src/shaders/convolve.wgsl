@@ -66,6 +66,10 @@ fn convolve_global(coord: vec2u, result: ptr<function, array<f32, OUT_CHANNELS>>
   }
 }
 
+fn convert_rgb_to_y(rgb: vec3f) -> f32 {
+  return 16./255. + (64.738 * rgb.r + 129.057 * rgb.g + 25.064 * rgb.b) / 255.;
+}
+
 fn sample_global(x: i32, y: i32) -> array<vec4f, IN_CHANNELS / 4> {
   let coord = vec2u(
     u32(max(0, min(x, i32(uniforms.canvasSize.x) - 1))),
@@ -88,15 +92,15 @@ fn sample_global(x: i32, y: i32) -> array<vec4f, IN_CHANNELS / 4> {
     var result = array<vec4f, IN_CHANNELS / 4>();
 
     result[0] = vec4f(
-      blurred.r,
-      blurred.g,
-      blurred.b,
-      aux.r, // depth
+      convert_rgb_to_y(blurred.rgb),
+      aux.z, // albedo luminance
+      aux.x, // normal.x
+      aux.y, // normal.y
     );
     result[1] = vec4f(
-      aux.g, // normal.x
-      aux.b, // normal.y
-      aux.a, // luminance
+      aux.w, // emission luminance
+      0,     // zero padding
+      0,     // zero padding
       0,     // zero padding
     );
     

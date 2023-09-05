@@ -93,15 +93,16 @@ fn main_aux(
   @location(3) fragDepth: f32,
 ) -> AuxOutput {
   let albedo = compute_albedo(fragUV);
-  let luminance = convert_rgb_to_y(albedo);
+  let albedo_luminance = convert_rgb_to_y(albedo);
+  let emission_luminance = 0f;
 
   let viewNormal = normalize(fragNormal);
 
   var output: AuxOutput;
   output.aux = vec4(
-    fragDepth / (1.0 + fragDepth), // depth
-    viewNormal.xy,                 // normal.xy
-    luminance                      // luminance
+    viewNormal.xy,
+    albedo_luminance,
+    emission_luminance
   );
 
   return output;

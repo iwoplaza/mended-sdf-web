@@ -85,7 +85,7 @@ export class GBufferMeshRenderer {
         {
           view: gBuffer.auxView,
 
-          clearValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+          clearValue: gBuffer.auxClearValue,
           loadOp: 'clear',
           storeOp: 'store',
         },
@@ -157,7 +157,6 @@ export class GBufferMeshRenderer {
         module: renderSceneShader,
         entryPoint: 'main_frag',
         targets: [
-          // albedo
           { format: 'rgba8unorm' },
         ],
       },
@@ -177,7 +176,6 @@ export class GBufferMeshRenderer {
         module: renderSceneShader,
         entryPoint: 'main_aux',
         targets: [
-          // normal
           { format: 'rgba16float' },
         ],
       },

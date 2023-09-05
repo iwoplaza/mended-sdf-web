@@ -10,9 +10,16 @@ export class GBuffer {
   targets = [
     // blurred
     { format: 'rgba8unorm' },
-    // depth & normal.xy & luminance
+    // normal.xy, albedo_luminance, emission_luminance
     { format: 'rgba16float' },
   ] as const;
+
+  auxClearValue = {
+    r: 0, // normal.x
+    g: 0, // normal.y
+    b: 0, // albedo_luminance
+    a: 0, // emission_luminance
+  } as const;
 
   quarterSize: [number, number];
 

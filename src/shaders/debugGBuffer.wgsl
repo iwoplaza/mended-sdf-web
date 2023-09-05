@@ -57,23 +57,34 @@ fn main_frag(
     // NORMALS
 
     result = vec4(
-      (aux.y + 1.0) * 0.5, // normal.x
-      (aux.z + 1.0) * 0.5, // normal.y
+      (aux.x + 1.0) * 0.5, // normal.x
+      (aux.y + 1.0) * 0.5, // normal.y
       0.5,
       1.0,
     );
   }
   else if (c.x < 0.66) {
-    // DEPTH
+    // ALBEDO_LUMI
 
-    let depth = aux.x;
+    let albedo = aux.z;
     result = vec4(
-      depth,
-      depth,
-      depth,
+      albedo,
+      albedo,
+      albedo,
       1.0,
     );
   }
+  // else if (c.x < 0.75) {
+  //   // EMISSION_LUMI
+
+  //   let emission = aux.w;
+  //   result = vec4(
+  //     emission,
+  //     emission,
+  //     emission,
+  //     1.0,
+  //   );
+  // }
   else {
     // BLURRED
 

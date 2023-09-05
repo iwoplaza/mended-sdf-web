@@ -1,7 +1,7 @@
 import { BufferWriter } from 'typed-binary';
 
 import menderWGSL from './shaders/convolve.wgsl?raw';
-import { Model4 } from './model4';
+import { Model6 } from './model6';
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
 import { NetworkLayer } from './networkLayer';
@@ -9,8 +9,8 @@ import { preprocessShaderCode } from './preprocessShaderCode';
 
 const blockDim = 8;
 
-const FIRST_DEPTH = 32;
-const SECOND_DEPTH = 16;
+const FIRST_DEPTH = 8;
+const SECOND_DEPTH = 8;
 
 type Options = {
   device: GPUDevice;
@@ -28,14 +28,14 @@ export const MenderStep = ({
   const firstWorkBuffer = device.createBuffer({
     label: 'First Work Buffer',
     size:
-      gBuffer.size[0] * gBuffer.size[1] * 64 * Float32Array.BYTES_PER_ELEMENT,
+      gBuffer.size[0] * gBuffer.size[1] * FIRST_DEPTH * Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.STORAGE,
   });
 
   const secondWorkBuffer = device.createBuffer({
     label: 'Second Work Buffer',
     size:
-      gBuffer.size[0] * gBuffer.size[1] * 32 * Float32Array.BYTES_PER_ELEMENT,
+      gBuffer.size[0] * gBuffer.size[1] * SECOND_DEPTH * Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.STORAGE,
   });
 
@@ -44,9 +44,9 @@ export const MenderStep = ({
   //
 
   const convLayers = [
-    new NetworkLayer(device, Model4.Conv1Weight, Model4.Conv1Bias),
-    new NetworkLayer(device, Model4.Conv2Weight, Model4.Conv2Bias),
-    new NetworkLayer(device, Model4.Conv3Weight, Model4.Conv3Bias),
+    new NetworkLayer(device, Model6.Conv1Weight, Model6.Conv1Bias),
+    new NetworkLayer(device, Model6.Conv2Weight, Model6.Conv2Bias),
+    new NetworkLayer(device, Model6.Conv3Weight, Model6.Conv3Bias),
   ];
 
   //
@@ -188,7 +188,7 @@ export const MenderStep = ({
           code: preprocessShaderCode(menderWGSL, {
             KERNEL_RADIUS: '2',
             IN_CHANNELS: `${SECOND_DEPTH}`,
-            OUT_CHANNELS: '3',
+            OUT_CHANNELS: '1',
             RELU: 'false',
             INPUT_FROM_GBUFFER: 'false',
           }),
