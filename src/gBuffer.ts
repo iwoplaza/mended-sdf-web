@@ -1,10 +1,12 @@
 export class GBuffer {
-  quarterTexture: GPUTexture;
-  upscaledTexture: GPUTexture;
+  quarterTexture: GPUTexture; // used by Mender
+  upscaledTexture: GPUTexture; // used by Mender
+  rawRenderTexture: GPUTexture; // a render before any post-processing
   auxTexture: GPUTexture;
 
   quarterView: GPUTextureView;
   upscaledView: GPUTextureView;
+  rawRenderView: GPUTextureView;
   auxView: GPUTextureView;
 
   targets = [
@@ -29,7 +31,9 @@ export class GBuffer {
     this.quarterTexture = device.createTexture({
       size: this.quarterSize,
       usage:
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.STORAGE_BINDING,
       format: 'rgba8unorm',
     });
 
@@ -40,15 +44,27 @@ export class GBuffer {
       format: 'rgba8unorm',
     });
 
+    this.rawRenderTexture = device.createTexture({
+      size: this.size,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.STORAGE_BINDING,
+      format: 'rgba8unorm',
+    });
+
     this.auxTexture = device.createTexture({
       size: _size,
       usage:
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        GPUTextureUsage.RENDER_ATTACHMENT |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.STORAGE_BINDING,
       format: 'rgba16float',
     });
 
     this.quarterView = this.quarterTexture.createView();
     this.upscaledView = this.upscaledTexture.createView();
+    this.rawRenderView = this.rawRenderTexture.createView();
     this.auxView = this.auxTexture.createView();
   }
 

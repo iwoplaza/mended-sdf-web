@@ -10,7 +10,6 @@ type Options = {
   context: GPUCanvasContext;
   presentationFormat: GPUTextureFormat;
   gBuffer: GBuffer;
-  menderResultBuffer: GPUBuffer;
 };
 
 export const PostProcessingStep = ({
@@ -18,7 +17,6 @@ export const PostProcessingStep = ({
   context,
   presentationFormat,
   gBuffer,
-  menderResultBuffer,
 }: Options) => {
   //
   // SCENE
@@ -86,21 +84,12 @@ export const PostProcessingStep = ({
   };
 
   const bindGroup = device.createBindGroup({
+    label: 'Post Processing - Bind Group',
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       {
         binding: 0,
-        resource: { buffer: sceneUniformBuffer },
-      },
-      {
-        binding: 1,
-        resource: gBuffer.upscaledView,
-      },
-      {
-        binding: 2,
-        resource: {
-          buffer: menderResultBuffer,
-        },
+        resource: gBuffer.rawRenderView,
       },
     ],
   });

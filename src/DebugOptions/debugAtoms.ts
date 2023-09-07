@@ -1,6 +1,9 @@
 import { atomWithStorage } from 'jotai/utils';
 
-export const showPartialRendersAtom = atomWithStorage(
-  'SHOW_PARTIAL_RENDERS',
-  false,
+export type DisplayMode = 'mended' | 'traditional' | 'g-buffer';
+
+export const displayModeAtom = atomWithStorage<DisplayMode>(
+  'DISPLAY_MODE',
+  'mended',
 );
+

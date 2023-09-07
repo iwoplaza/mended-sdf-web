@@ -1,7 +1,7 @@
 import { ChangeEvent, useCallback } from 'react';
 import { SetStateAction, WritableAtom, useAtom } from 'jotai';
 
-import { showPartialRendersAtom } from './debugAtoms';
+import { displayModeAtom } from './debugAtoms';
 
 function Checkbox({
   label,
@@ -24,12 +24,49 @@ function Checkbox({
   );
 }
 
+function Select<T extends string>({
+  label,
+  options,
+  valueAtom,
+}: {
+  label: string;
+  options: { key: T; label: string }[];
+  valueAtom: WritableAtom<T, [SetStateAction<T>], unknown>;
+}) {
+  const [value, setValue] = useAtom(valueAtom);
+
+  const handleSelect = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      setValue(event.currentTarget.value as T);
+    },
+    [],
+  );
+
+  return (
+    <label>
+      {label}
+      <select value={value} onChange={handleSelect}>
+        {options.map((opt) => (
+          <option key={opt.key} value={opt.key}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function DebugOptions() {
   return (
     <div>
-      <Checkbox
-        label="Show Partial Renders"
-        valueAtom={showPartialRendersAtom}
+      <Select
+        label="Display Mode"
+        options={[
+          { key: 'mended', label: 'Mended' },
+          { key: 'traditional', label: 'Traditional' },
+          { key: 'g-buffer', label: 'G-Buffer' },
+        ]}
+        valueAtom={displayModeAtom}
       />
     </div>
   );

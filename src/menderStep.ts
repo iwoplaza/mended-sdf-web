@@ -1,6 +1,9 @@
 import { BufferWriter } from 'typed-binary';
 
-import menderWGSL from './shaders/convolve.wgsl?raw';
+import convolveWGSL from './shaders/convolve.wgsl?raw';
+import fullScreenQuadWGSL from './shaders/fullScreenQuad.wgsl?raw';
+import combineWGSL from './shaders/finalizeMender.wgsl?raw';
+
 import { Model6 } from './model6';
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
@@ -15,27 +18,35 @@ const SECOND_DEPTH = 8;
 type Options = {
   device: GPUDevice;
   gBuffer: GBuffer;
-  menderResultBuffer: GPUBuffer;
+  targetTexture: GPUTextureView;
 };
 
-export const MenderStep = ({
-  device,
-  gBuffer,
-  menderResultBuffer,
-}: Options) => {
+export const MenderStep = ({ device, gBuffer, targetTexture }: Options) => {
   // Textures
 
   const firstWorkBuffer = device.createBuffer({
     label: 'First Work Buffer',
     size:
-      gBuffer.size[0] * gBuffer.size[1] * FIRST_DEPTH * Float32Array.BYTES_PER_ELEMENT,
+      gBuffer.size[0] *
+      gBuffer.size[1] *
+      FIRST_DEPTH *
+      Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.STORAGE,
   });
 
   const secondWorkBuffer = device.createBuffer({
     label: 'Second Work Buffer',
     size:
-      gBuffer.size[0] * gBuffer.size[1] * SECOND_DEPTH * Float32Array.BYTES_PER_ELEMENT,
+      gBuffer.size[0] *
+      gBuffer.size[1] *
+      SECOND_DEPTH *
+      Float32Array.BYTES_PER_ELEMENT,
+    usage: GPUBufferUsage.STORAGE,
+  });
+
+  const mendedResultBuffer = device.createBuffer({
+    label: 'Mender Result Buffer',
+    size: gBuffer.size[0] * gBuffer.size[1] * Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.STORAGE,
   });
 
@@ -139,7 +150,7 @@ export const MenderStep = ({
       compute: {
         module: device.createShaderModule({
           label: 'Layer #1 convolutional shader',
-          code: preprocessShaderCode(menderWGSL, {
+          code: preprocessShaderCode(convolveWGSL, {
             KERNEL_RADIUS: '4',
             IN_CHANNELS: '8',
             OUT_CHANNELS: `${FIRST_DEPTH}`,
@@ -162,7 +173,7 @@ export const MenderStep = ({
       compute: {
         module: device.createShaderModule({
           label: 'Layer #2 convolutional shader',
-          code: preprocessShaderCode(menderWGSL, {
+          code: preprocessShaderCode(convolveWGSL, {
             KERNEL_RADIUS: '2',
             IN_CHANNELS: `${FIRST_DEPTH}`,
             OUT_CHANNELS: `${SECOND_DEPTH}`,
@@ -184,8 +195,8 @@ export const MenderStep = ({
       }),
       compute: {
         module: device.createShaderModule({
-          label: 'Layer #2 convolutional shader',
-          code: preprocessShaderCode(menderWGSL, {
+          label: 'Layer #3 convolutional shader',
+          code: preprocessShaderCode(convolveWGSL, {
             KERNEL_RADIUS: '2',
             IN_CHANNELS: `${SECOND_DEPTH}`,
             OUT_CHANNELS: '1',
@@ -284,7 +295,7 @@ export const MenderStep = ({
         {
           binding: 0,
           resource: {
-            buffer: menderResultBuffer,
+            buffer: mendedResultBuffer,
           },
         },
 
@@ -302,6 +313,66 @@ export const MenderStep = ({
     }),
   ];
 
+  // ---
+  // Combination pass
+  // ---
+
+  const combinationPassDescriptor: GPURenderPassDescriptor = {
+    colorAttachments: [
+      {
+        view: targetTexture,
+
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      },
+    ],
+  };
+
+  const fullScreenQuadShader = device.createShaderModule({
+    label: 'Full Screen Quad Shader',
+    code: fullScreenQuadWGSL,
+  });
+
+  const combineShader = device.createShaderModule({
+    label: 'Combine Shader',
+    code: combineWGSL,
+  });
+
+  const combinationPipeline = device.createRenderPipeline({
+    label: 'Combination Pipeline',
+    layout: 'auto',
+    vertex: {
+      module: fullScreenQuadShader,
+      entryPoint: 'main',
+    },
+    fragment: {
+      module: combineShader,
+      entryPoint: 'main',
+      targets: [{ format: 'rgba8unorm' }],
+    },
+  });
+
+  const combinationBindGroup = device.createBindGroup({
+    layout: combinationPipeline.getBindGroupLayout(0),
+    entries: [
+      {
+        binding: 0,
+        resource: { buffer: sceneUniformBuffer },
+      },
+      {
+        binding: 1,
+        resource: gBuffer.upscaledView,
+      },
+      {
+        binding: 2,
+        resource: {
+          buffer: mendedResultBuffer,
+        },
+      },
+    ],
+  });
+
   return {
     perform(commandEncoder: GPUCommandEncoder) {
       const computePass = commandEncoder.beginComputePass();
@@ -318,6 +389,14 @@ export const MenderStep = ({
       }
 
       computePass.end();
+
+      // Combining the convolved result with the initial blurry render
+
+      const pass = commandEncoder.beginRenderPass(combinationPassDescriptor);
+      pass.setPipeline(combinationPipeline);
+      pass.setBindGroup(0, combinationBindGroup);
+      pass.draw(6);
+      pass.end();
     },
   };
 };
