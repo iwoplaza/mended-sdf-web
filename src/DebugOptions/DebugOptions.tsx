@@ -65,6 +65,7 @@ function DebugOptions() {
           { key: 'mended', label: 'Mended' },
           { key: 'traditional', label: 'Traditional' },
           { key: 'g-buffer', label: 'G-Buffer' },
+          { key: 'blur-diff', label: 'Blur Diff' },
         ]}
         valueAtom={displayModeAtom}
       />

@@ -1,6 +1,7 @@
 import renderSDFWGSL from '../shaders/renderSDF.wgsl?raw';
 import { GBuffer } from '../gBuffer';
 import { preprocessShaderCode } from '../preprocessShaderCode';
+import { WhiteNoiseBuffer } from '../whiteNoiseBuffer';
 
 // class Camera {
 //   private gpuBuffer: GPUBuffer;
@@ -26,7 +27,14 @@ export const SDFRenderer = (
 ) => {
   const LABEL = `SDF Renderer`;
   const blockDim = 8;
+  const whiteNoiseBufferSize = 4000;
   const mainPassSize = renderQuarter ? gBuffer.quarterSize : gBuffer.size;
+
+  const whiteNoiseBuffer = WhiteNoiseBuffer(
+    device,
+    whiteNoiseBufferSize,
+    GPUBufferUsage.STORAGE,
+  );
 
   const mainBindGroupLayout = device.createBindGroupLayout({
     label: `${LABEL} - Main Bind Group Layout`,
@@ -36,6 +44,19 @@ export const SDFRenderer = (
         visibility: GPUShaderStage.COMPUTE,
         storageTexture: {
           format: 'rgba8unorm',
+        },
+      },
+    ],
+  });
+
+  const sharedBindGroupLayout = device.createBindGroupLayout({
+    label: `${LABEL} - Shared Bind Group Layout`,
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'read-only-storage',
         },
       },
     ],
@@ -54,8 +75,22 @@ export const SDFRenderer = (
     ],
   });
 
+  const sharedBindGroup = device.createBindGroup({
+    label: `${LABEL} - Shared Bind Group`,
+    layout: sharedBindGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          label: `${LABEL} - White Noise Buffer`,
+          buffer: whiteNoiseBuffer,
+        },
+      },
+    ],
+  });
+
   const mainBindGroup = device.createBindGroup({
-    label: `${LABEL} = Main Bind Group`,
+    label: `${LABEL} - Main Bind Group`,
     layout: mainBindGroupLayout,
     entries: [
       {
@@ -66,7 +101,7 @@ export const SDFRenderer = (
   });
 
   const auxBindGroup = device.createBindGroup({
-    label: `${LABEL} = Aux Bind Group`,
+    label: `${LABEL} - Aux Bind Group`,
     layout: auxBindGroupLayout,
     entries: [
       {
@@ -79,7 +114,7 @@ export const SDFRenderer = (
   const mainPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
     layout: device.createPipelineLayout({
-      bindGroupLayouts: [mainBindGroupLayout],
+      bindGroupLayouts: [sharedBindGroupLayout, mainBindGroupLayout],
     }),
     compute: {
       module: device.createShaderModule({
@@ -88,6 +123,7 @@ export const SDFRenderer = (
           OUTPUT_FORMAT: 'rgba8unorm',
           WIDTH: `${mainPassSize[0]}`,
           HEIGHT: `${mainPassSize[1]}`,
+          WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
         }),
       }),
       entryPoint: 'main_frag',
@@ -97,7 +133,7 @@ export const SDFRenderer = (
   const auxPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
     layout: device.createPipelineLayout({
-      bindGroupLayouts: [auxBindGroupLayout],
+      bindGroupLayouts: [sharedBindGroupLayout, auxBindGroupLayout],
     }),
     compute: {
       module: device.createShaderModule({
@@ -106,6 +142,7 @@ export const SDFRenderer = (
           OUTPUT_FORMAT: 'rgba16float',
           WIDTH: `${gBuffer.size[0]}`,
           HEIGHT: `${gBuffer.size[1]}`,
+          WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
         }),
       }),
       entryPoint: 'main_aux',
@@ -117,7 +154,8 @@ export const SDFRenderer = (
       const mainPass = commandEncoder.beginComputePass();
 
       mainPass.setPipeline(mainPipeline);
-      mainPass.setBindGroup(0, mainBindGroup);
+      mainPass.setBindGroup(0, sharedBindGroup);
+      mainPass.setBindGroup(1, mainBindGroup);
       mainPass.dispatchWorkgroups(
         Math.ceil(mainPassSize[0] / blockDim),
         Math.ceil(mainPassSize[1] / blockDim),
@@ -129,7 +167,8 @@ export const SDFRenderer = (
       const auxPass = commandEncoder.beginComputePass();
 
       auxPass.setPipeline(auxPipeline);
-      auxPass.setBindGroup(0, auxBindGroup);
+      auxPass.setBindGroup(0, sharedBindGroup);
+      auxPass.setBindGroup(1, auxBindGroup);
       auxPass.dispatchWorkgroups(
         Math.ceil(gBuffer.size[0] / blockDim),
         Math.ceil(gBuffer.size[1] / blockDim),

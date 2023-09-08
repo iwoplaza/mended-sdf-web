@@ -7,6 +7,7 @@ import { GBuffer } from '../gBuffer';
 import { displayModeAtom } from '../DebugOptions';
 import { MenderStep } from '../menderStep';
 import { SDFRenderer } from './sdfRenderer';
+import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
 
 export const GameEngine = async (canvas: HTMLCanvasElement) => {
   const adapter = await navigator.gpu.requestAdapter();
@@ -56,6 +57,13 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
     presentationFormat,
   });
 
+  const blipDifference = BlipDifferenceStep({
+    device,
+    context,
+    presentationFormat,
+    textures: [gBuffer.upscaledView, gBuffer.rawRenderView],
+  });
+
   context.configure({
     device,
     format: presentationFormat,
@@ -67,12 +75,18 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
     const commandEncoder = device.createCommandEncoder();
 
     // -- Rendering the whole scene & aux.
-    if (displayMode === 'traditional') {
+    if (displayMode === 'traditional' || displayMode === 'blur-diff') {
       traditionalSdfRenderer.perform(commandEncoder);
-    } else {
-      sdfRenderer.perform(commandEncoder);
     }
-    // gBufferMeshRenderer.perform(device, commandEncoder);
+
+    if (
+      displayMode === 'g-buffer' ||
+      displayMode === 'blur-diff' ||
+      displayMode === 'mended'
+    ) {
+      sdfRenderer.perform(commandEncoder);
+      // gBufferMeshRenderer.perform(device, commandEncoder);
+    }
 
     // -- Upscaling the quarter-resolution render.
     upscaleStep.perform(commandEncoder);
@@ -82,10 +96,12 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
       gBufferDebugger.perform(context, commandEncoder);
     } else if (displayMode === 'traditional') {
       postProcessing.perform(commandEncoder);
-    } else {
+    } else if (displayMode === 'mended') {
       // -- Restoring quality to the render using convolution.
       menderStep.perform(commandEncoder);
       postProcessing.perform(commandEncoder);
+    } else if (displayMode === 'blur-diff') {
+      blipDifference.perform(commandEncoder);
     }
 
     device.queue.submit([commandEncoder.finish()]);
