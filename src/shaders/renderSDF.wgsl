@@ -16,8 +16,9 @@ const PI = 3.14159265359;
 const BLOCK_SIZE = 8;
 const MAX_STEPS = 1000;
 const SURFACE_DIST = 0.0001;
-const SKY_SPHERE_RADIUS = 10;
-const SUB_SAMPLES = 512;
+const SKY_SPHERE_RADIUS = 5;
+const SUB_SAMPLES = 256;
+const MAX_REFL = 3u;
 
 @group(0) @binding(0) var<storage, read> white_noise_buffer: array<f32, WHITE_NOISE_BUFFER_SIZE>;
 @group(1) @binding(0) var output_tex: texture_storage_2d<{{OUTPUT_FORMAT}}, write>;
@@ -59,7 +60,7 @@ fn rand_on_hemisphere(seed: ptr<function, u32>, normal: vec3f) -> vec3f {
     value *= -1.;
   }
 
-  value += normal * 0.01;
+  value += normal * 0.1;
   
   return normalize(value);
 }
@@ -73,15 +74,16 @@ fn O_sky_sdf(pos: vec3f) -> f32 {
 }
 
 fn O_sphere1_sdf(pos: vec3f) -> f32 {
-  return sphere_sdf(pos, vec3f(-0.7, 0, 1), 0.2);
+  return sphere_sdf(pos, vec3f(-0.5, 0, 1), 0.2);
 }
 
 fn O_sphere2_sdf(pos: vec3f) -> f32 {
-  return sphere_sdf(pos, vec3f(0, 0, 1), 0.3);
+  return sphere_sdf(pos, vec3f(0.5, 0, 1), 0.3);
 }
 
+// Light Source
 fn O_sphere3_sdf(pos: vec3f) -> f32 {
-  return sphere_sdf(pos, vec3f(0.5, 0, 0.5), 0.2);
+  return sphere_sdf(pos, vec3f(0.0, 0.4, 1), 0.1);
 }
 
 fn world_sdf(pos: vec3f) -> f32 {
@@ -153,8 +155,8 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
     (*out).color = vec3f(0.5, 0.7, 1);
   }
   else if (obj_idx == 3u) { // O_sphere3_sdf
-    (*out).emissive = false;
-    (*out).color = vec3f(0.5, 1, 0.7);
+    (*out).emissive = true;
+    (*out).color = vec3f(0.5, 1, 0.7) * 50;
   }
 }
 
@@ -169,26 +171,27 @@ fn world_normals(point: vec3f) -> vec3f {
   let yDistance = world_sdf(offY);
   let zDistance = world_sdf(offZ);
 
-  return normalize(vec3f(
+  return vec3f(
     (xDistance - centerDistance),
     (yDistance - centerDistance),
     (zDistance - centerDistance),
-  ) / epsilon);
+  ) / epsilon;
 }
 
 fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
-  let dir = vec3f(
+  var dir = vec3f(
     (coord / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
     1.
   );
 
   let hspan = 1.;
-  let vspan = -1.;
+  let vspan = 1.;
+
+  dir.x *= hspan;
+  dir.y *= -vspan;
 
   *out_pos = vec3f(0, 0, 0);
-  (*out_dir).x = dir.x * hspan;
-  (*out_dir).y = dir.y * vspan;
-  (*out_dir).z = 1.;
+  *out_dir = normalize(dir);
 }
 
 fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
@@ -224,7 +227,7 @@ fn main_frag(
   let lid = LocalInvocationID.xy;
 
   let time = 0.; // TODO: Add time
-  var seed = GlobalInvocationID.x + GlobalInvocationID.y * WIDTH + GlobalInvocationID.z * WIDTH * HEIGHT;
+  var seed = (GlobalInvocationID.x * 557) + GlobalInvocationID.y * (WIDTH + 1873) + GlobalInvocationID.z * (WIDTH * HEIGHT * 227);
 
   var acc = vec3f(0., 0., 0.);
   var march_result: MarchResult;
@@ -235,22 +238,23 @@ fn main_frag(
     // Anti-aliasing
     // TODO: Offset in view space, not in world space.
     // TODO: Maybe offset by sub-pixel density?.
-    // let offset = vec2f(
-    //   randf(&seed) * 1.,
-    //   randf(&seed) * 1.,
-    // );
-    let offset = rand_in_circle(&seed) * 0.9 + 0.5;
+    let offset = vec2f(
+      randf(&seed) * 1.,
+      randf(&seed) * 1.,
+    );
+    // let offset = rand_in_circle(&seed) * 0.5 + vec2f(0.5, 0.5);
 
     construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
 
     var sub_acc = vec3f(1., 1., 1.);
 
-    for (var refl = 0u; refl < 2u; refl++) {
+    for (var refl = 0u; refl < MAX_REFL; refl++) {
       march(ray_pos, ray_dir, &march_result);
       ray_pos = march_result.position;
       ray_dir = rand_on_hemisphere(&seed, march_result.normal);
       // ray_dir = march_result.normal;
       sub_acc *= march_result.material.color;
+      // sub_acc *= march_result.normal;
 
       if (march_result.material.emissive) {
         break;
@@ -279,12 +283,19 @@ fn main_aux(
   var march_result: MarchResult;
   march(ray_pos, ray_dir, &march_result);
 
-  let world_normal = march_result.normal; // TODO Fill up
-  let albedo_luminance = convert_rgb_to_y(march_result.material.color); // TODO Fill up
-  let emission_luminance = 0.; // TODO Fill up
+  let world_normal = march_result.normal;
+  let white = vec3f(1., 1., 1.);
+  let mat_color = min(march_result.material.color, white);
+
+  var albedo_luminance = convert_rgb_to_y(mat_color);
+  var emission_luminance = 0.;
+  if (march_result.material.emissive) {
+    emission_luminance = convert_rgb_to_y(mat_color);
+    albedo_luminance = 0;
+  }
   
   // var seed = GlobalInvocationID.x + GlobalInvocationID.y * WIDTH + GlobalInvocationID.z * WIDTH * HEIGHT;
-  // let albedo_luminance = randf(&seed); // TODO Fill up
+  // let albedo_luminance = randf(&seed);
 
   let view_normal = vec2f(world_normal.x, world_normal.y);
 
