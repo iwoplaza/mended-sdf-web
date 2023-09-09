@@ -1,8 +1,10 @@
 struct Material {
   color: vec3f,
+  emissive: bool,
 }
 
 struct MarchResult {
+  position: vec3f,
   material: Material,
   normal: vec3f,
 }
@@ -10,11 +12,12 @@ struct MarchResult {
 const WIDTH = {{WIDTH}};
 const HEIGHT = {{HEIGHT}};
 const WHITE_NOISE_BUFFER_SIZE = {{WHITE_NOISE_BUFFER_SIZE}};
+const PI = 3.14159265359;
 const BLOCK_SIZE = 8;
-const MAX_STEPS = 100;
+const MAX_STEPS = 1000;
 const SURFACE_DIST = 0.0001;
 const SKY_SPHERE_RADIUS = 10;
-const SUB_SAMPLES = 128;
+const SUB_SAMPLES = 512;
 
 @group(0) @binding(0) var<storage, read> white_noise_buffer: array<f32, WHITE_NOISE_BUFFER_SIZE>;
 @group(1) @binding(0) var output_tex: texture_storage_2d<{{OUTPUT_FORMAT}}, write>;
@@ -29,6 +32,36 @@ fn randf(seed: ptr<function, u32>) -> f32 {
   *seed = curr_seed;
 
   return white_noise_buffer[curr_seed];
+}
+
+fn rand_in_unit_cube(seed: ptr<function, u32>) -> vec3f {
+  return vec3f(
+    randf(seed) * 2. - 1.,
+    randf(seed) * 2. - 1.,
+    randf(seed) * 2. - 1.,
+  );
+}
+
+fn rand_in_circle(seed: ptr<function, u32>) -> vec2f {
+  let radius = sqrt(randf(seed));
+  let angle = randf(seed) * 2 * PI;
+
+  return vec2f(
+    cos(angle) * radius,
+    sin(angle) * radius,
+  );
+}
+
+fn rand_on_hemisphere(seed: ptr<function, u32>, normal: vec3f) -> vec3f {
+  var value = rand_in_unit_cube(seed);
+
+  if (dot(normal, value) < 0.) {
+    value *= -1.;
+  }
+
+  value += normal * 0.01;
+  
+  return normalize(value);
 }
 
 fn sphere_sdf(pos: vec3f, o: vec3f, r: f32) -> f32 {
@@ -48,7 +81,7 @@ fn O_sphere2_sdf(pos: vec3f) -> f32 {
 }
 
 fn O_sphere3_sdf(pos: vec3f) -> f32 {
-  return sphere_sdf(pos, vec3f(0.7, 0, 1), 0.1);
+  return sphere_sdf(pos, vec3f(0.5, 0, 0.5), 0.2);
 }
 
 fn world_sdf(pos: vec3f) -> f32 {
@@ -98,25 +131,34 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
   if (obj_idx == 0u) { // O_sky_sdf
     let dir = normalize(pos);
     let t = dir.y / 2. + 0.5;
+    (*out).emissive = true;
+    
+    let uv = floor(30.0 * dir.xy);
+    let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
+
     (*out).color = mix(
       vec3f(0.1, 0.15, 0.5),
-      vec3f(0.3, 0.7, 1),
+      vec3f(0.7, 0.9, 1),
       t,
-    );
+    ) * mix(1., 0., c);
+
+    // (*out).color = vec3f(0.4, 0.5, 0.6);
   }
   else if (obj_idx == 1u) { // O_sphere1_sdf
-    (*out).color = vec3f(0.5, 0.7, 1);
+    (*out).emissive = false;
+    (*out).color = vec3f(1, 0.9, 0.8);
   }
   else if (obj_idx == 2u) { // O_sphere2_sdf
+    (*out).emissive = false;
     (*out).color = vec3f(0.5, 0.7, 1);
   }
   else if (obj_idx == 3u) { // O_sphere3_sdf
-    (*out).color = vec3f(0.5, 0.7, 1);
+    (*out).emissive = false;
+    (*out).color = vec3f(0.5, 1, 0.7);
   }
 }
 
-fn world_normals(point: vec3f) -> vec3f
-{
+fn world_normals(point: vec3f) -> vec3f {
   let epsilon = SURFACE_DIST * 0.1; // arbitrary - should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
   let offX = vec3f(point.x + epsilon, point.y, point.z);
   let offY = vec3f(point.x, point.y + epsilon, point.z);
@@ -127,16 +169,16 @@ fn world_normals(point: vec3f) -> vec3f
   let yDistance = world_sdf(offY);
   let zDistance = world_sdf(offZ);
 
-  return vec3f(
+  return normalize(vec3f(
     (xDistance - centerDistance),
     (yDistance - centerDistance),
     (zDistance - centerDistance),
-  ) / epsilon;
+  ) / epsilon);
 }
 
-fn construct_ray(coord: vec3<u32>, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
+fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
   let dir = vec3f(
-    (vec2f(coord.xy) / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
+    (coord / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
     1.
   );
 
@@ -152,15 +194,20 @@ fn construct_ray(coord: vec3<u32>, out_pos: ptr<function, vec3f>, out_dir: ptr<f
 fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
   var pos = ray_pos;
 
-  for (var step: u32 = 0; step <= MAX_STEPS; step++) {
-    let min_dist: f32 = world_sdf(pos);
+  var prev_dist = 0.;
 
-    if (min_dist < SURFACE_DIST) {
+  for (var step: u32 = 0; step <= MAX_STEPS; step++) {
+    let dist: f32 = world_sdf(pos);
+
+    if (dist < SURFACE_DIST && dist < prev_dist) {
       break;
     }
 
-    pos += ray_dir * min_dist;
+    pos += ray_dir * dist;
+    prev_dist = dist;
   }
+
+  (*out).position = pos;
 
   var material: Material;
   world_material(pos, &material);
@@ -175,34 +222,42 @@ fn main_frag(
   @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
 ) {
   let lid = LocalInvocationID.xy;
-  var ray_pos = vec3f(0, 0, 0);
-  var ray_dir = vec3f(0, 0, 1);
 
   let time = 0.; // TODO: Add time
   var seed = GlobalInvocationID.x + GlobalInvocationID.y * WIDTH + GlobalInvocationID.z * WIDTH * HEIGHT;
 
-  construct_ray(GlobalInvocationID, &ray_pos, &ray_dir);
-
   var acc = vec3f(0., 0., 0.);
   var march_result: MarchResult;
+  var ray_pos = vec3f(0, 0, 0);
+  var ray_dir = vec3f(0, 0, 1);
 
   for (var ss = 0u; ss < SUB_SAMPLES; ss++) {
+    // Anti-aliasing
     // TODO: Offset in view space, not in world space.
     // TODO: Maybe offset by sub-pixel density?.
-    let OFFSET_X = 3. / WIDTH;
-    let OFFSET_Y = 3. / HEIGHT;
+    // let offset = vec2f(
+    //   randf(&seed) * 1.,
+    //   randf(&seed) * 1.,
+    // );
+    let offset = rand_in_circle(&seed) * 0.9 + 0.5;
 
-    let HALF_PIXEL_X = 0.5 / WIDTH;
-    let HALF_PIXEL_Y = -0.5 / WIDTH;
+    construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
 
-    let sub_ray_pos = vec3f(
-      ray_pos.x + HALF_PIXEL_X * 2. + (randf(&seed) * OFFSET_X - OFFSET_X / 2),
-      ray_pos.y + HALF_PIXEL_Y * 2. + (randf(&seed) * OFFSET_Y - OFFSET_Y / 2),
-      ray_pos.z,
-    );
+    var sub_acc = vec3f(1., 1., 1.);
 
-    march(sub_ray_pos, ray_dir, &march_result);
-    acc += march_result.material.color;
+    for (var refl = 0u; refl < 2u; refl++) {
+      march(ray_pos, ray_dir, &march_result);
+      ray_pos = march_result.position;
+      ray_dir = rand_on_hemisphere(&seed, march_result.normal);
+      // ray_dir = march_result.normal;
+      sub_acc *= march_result.material.color;
+
+      if (march_result.material.emissive) {
+        break;
+      }
+    }
+
+    acc += sub_acc;
   }
 
   acc /= SUB_SAMPLES;
@@ -219,7 +274,7 @@ fn main_aux(
   var ray_pos = vec3f(0, 0, 0);
   var ray_dir = vec3f(0, 0, 1);
 
-  construct_ray(GlobalInvocationID, &ray_pos, &ray_dir);
+  construct_ray(vec2f(GlobalInvocationID.xy), &ray_pos, &ray_dir);
 
   var march_result: MarchResult;
   march(ray_pos, ray_dir, &march_result);
