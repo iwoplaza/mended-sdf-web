@@ -2,6 +2,7 @@ import renderSDFWGSL from '../shaders/renderSDF.wgsl?raw';
 import { GBuffer } from '../gBuffer';
 import { preprocessShaderCode } from '../preprocessShaderCode';
 import { WhiteNoiseBuffer } from '../whiteNoiseBuffer';
+import { TimeInfoBuffer } from './timeInfoBuffer';
 
 // class Camera {
 //   private gpuBuffer: GPUBuffer;
@@ -27,7 +28,7 @@ export const SDFRenderer = (
 ) => {
   const LABEL = `SDF Renderer`;
   const blockDim = 8;
-  const whiteNoiseBufferSize = 4000;
+  const whiteNoiseBufferSize = 512 * 512;
   const mainPassSize = renderQuarter ? gBuffer.quarterSize : gBuffer.size;
 
   const whiteNoiseBuffer = WhiteNoiseBuffer(
@@ -35,6 +36,8 @@ export const SDFRenderer = (
     whiteNoiseBufferSize,
     GPUBufferUsage.STORAGE,
   );
+
+  const timeInfoBuffer = TimeInfoBuffer(device, GPUBufferUsage.UNIFORM);
 
   const mainBindGroupLayout = device.createBindGroupLayout({
     label: `${LABEL} - Main Bind Group Layout`,
@@ -57,6 +60,13 @@ export const SDFRenderer = (
         visibility: GPUShaderStage.COMPUTE,
         buffer: {
           type: 'read-only-storage',
+        },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'uniform',
         },
       },
     ],
@@ -84,6 +94,13 @@ export const SDFRenderer = (
         resource: {
           label: `${LABEL} - White Noise Buffer`,
           buffer: whiteNoiseBuffer,
+        },
+      },
+      {
+        binding: 1,
+        resource: {
+          label: `${LABEL} - Time Info`,
+          buffer: timeInfoBuffer.buffer,
         },
       },
     ],
@@ -151,6 +168,8 @@ export const SDFRenderer = (
 
   return {
     perform(commandEncoder: GPUCommandEncoder) {
+      timeInfoBuffer.update();
+
       const mainPass = commandEncoder.beginComputePass();
 
       mainPass.setPipeline(mainPipeline);

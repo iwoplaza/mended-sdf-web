@@ -9,18 +9,29 @@ struct MarchResult {
   normal: vec3f,
 }
 
+struct SphereObj {
+  xyzr: vec4f,
+  material_idx: u32,
+}
+
 const WIDTH = {{WIDTH}};
 const HEIGHT = {{HEIGHT}};
 const WHITE_NOISE_BUFFER_SIZE = {{WHITE_NOISE_BUFFER_SIZE}};
 const PI = 3.14159265359;
+const PI2 = 2. * PI;
 const BLOCK_SIZE = 8;
 const MAX_STEPS = 1000;
 const SURFACE_DIST = 0.0001;
 const SKY_SPHERE_RADIUS = 5;
-const SUB_SAMPLES = 256;
+const SUPER_SAMPLES = 4;
+const SUB_SAMPLES = 32;
 const MAX_REFL = 3u;
 
+const VEC3F_MAX = vec3f(1., 1., 1.);
+
 @group(0) @binding(0) var<storage, read> white_noise_buffer: array<f32, WHITE_NOISE_BUFFER_SIZE>;
+@group(0) @binding(1) var<uniform> time: f32;
+
 @group(1) @binding(0) var output_tex: texture_storage_2d<{{OUTPUT_FORMAT}}, write>;
 
 fn convert_rgb_to_y(rgb: vec3f) -> f32 {
@@ -83,7 +94,7 @@ fn O_sphere2_sdf(pos: vec3f) -> f32 {
 
 // Light Source
 fn O_sphere3_sdf(pos: vec3f) -> f32 {
-  return sphere_sdf(pos, vec3f(0.0, 0.4, 1), 0.1);
+  return sphere_sdf(pos, vec3f(0.1, 0.2, 0.7), 0.1);
 }
 
 fn world_sdf(pos: vec3f) -> f32 {
@@ -156,7 +167,7 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
   }
   else if (obj_idx == 3u) { // O_sphere3_sdf
     (*out).emissive = true;
-    (*out).color = vec3f(0.5, 1, 0.7) * 50;
+    (*out).color = vec3f(0.5, 1, 0.7) * 10;
   }
 }
 
@@ -226,45 +237,53 @@ fn main_frag(
 ) {
   let lid = LocalInvocationID.xy;
 
-  let time = 0.; // TODO: Add time
-  var seed = (GlobalInvocationID.x * 557) + GlobalInvocationID.y * (WIDTH + 1873) + GlobalInvocationID.z * (WIDTH * HEIGHT * 227);
+  // var seed = (GlobalInvocationID.x * 17) + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT) + u32(time * 0.005) * 3931;
+  var seed = (GlobalInvocationID.x + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT)) * (SUPER_SAMPLES * SUPER_SAMPLES * SUB_SAMPLES * MAX_REFL * 3 + 1 + u32(time));
 
   var acc = vec3f(0., 0., 0.);
   var march_result: MarchResult;
   var ray_pos = vec3f(0, 0, 0);
   var ray_dir = vec3f(0, 0, 1);
 
-  for (var ss = 0u; ss < SUB_SAMPLES; ss++) {
-    // Anti-aliasing
-    // TODO: Offset in view space, not in world space.
-    // TODO: Maybe offset by sub-pixel density?.
-    let offset = vec2f(
-      randf(&seed) * 1.,
-      randf(&seed) * 1.,
-    );
-    // let offset = rand_in_circle(&seed) * 0.5 + vec2f(0.5, 0.5);
+  for (var sx = 0; sx < SUPER_SAMPLES; sx++) {
+    for (var sy = 0; sy < SUPER_SAMPLES; sy++) {
+      let offset = vec2f(
+        f32(sx) / SUPER_SAMPLES,
+        f32(sy) / SUPER_SAMPLES,
+      );
+      
+      for (var ss = 0u; ss < SUB_SAMPLES; ss++) {
+        // Anti-aliasing
+        // TODO: Offset in view space, not in world space.
+        // TODO: Maybe offset by sub-pixel density?.
+        // let offset = vec2f(
+        //   randf(&seed),
+        //   randf(&seed),
+        // );
 
-    construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
+        construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
+        
+        // let offset = rand_in_circle(&seed) * 0.5 + vec2f(0.5, 0.5);
+        var sub_acc = vec3f(1., 1., 1.);
 
-    var sub_acc = vec3f(1., 1., 1.);
+        for (var refl = 0u; refl < MAX_REFL; refl++) {
+          march(ray_pos, ray_dir, &march_result);
+          ray_pos = march_result.position;
+          ray_dir = rand_on_hemisphere(&seed, march_result.normal);
+          sub_acc *= march_result.material.color;
+          // sub_acc *= march_result.normal;
 
-    for (var refl = 0u; refl < MAX_REFL; refl++) {
-      march(ray_pos, ray_dir, &march_result);
-      ray_pos = march_result.position;
-      ray_dir = rand_on_hemisphere(&seed, march_result.normal);
-      // ray_dir = march_result.normal;
-      sub_acc *= march_result.material.color;
-      // sub_acc *= march_result.normal;
+          if (march_result.material.emissive) {
+            break;
+          }
+        }
 
-      if (march_result.material.emissive) {
-        break;
+        acc += sub_acc;
       }
     }
-
-    acc += sub_acc;
   }
 
-  acc /= SUB_SAMPLES;
+  acc /= SUB_SAMPLES * SUPER_SAMPLES * SUPER_SAMPLES;
 
   textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
 }
@@ -293,9 +312,8 @@ fn main_aux(
     emission_luminance = convert_rgb_to_y(mat_color);
     albedo_luminance = 0;
   }
-  
+
   // var seed = GlobalInvocationID.x + GlobalInvocationID.y * WIDTH + GlobalInvocationID.z * WIDTH * HEIGHT;
-  // let albedo_luminance = randf(&seed);
 
   let view_normal = vec2f(world_normal.x, world_normal.y);
 
