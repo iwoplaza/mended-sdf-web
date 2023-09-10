@@ -26,6 +26,7 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 
   const gBuffer = new GBuffer(device, [canvas.width, canvas.height]);
+  console.log(`Rendering a ${gBuffer.size[0]} by ${gBuffer.size[1]} image`);
 
   const sdfRenderer = SDFRenderer(device, gBuffer, true);
   const traditionalSdfRenderer = SDFRenderer(device, gBuffer, false);

@@ -60,6 +60,7 @@ export const SDFRenderer = (
 ) => {
   const LABEL = `SDF Renderer`;
   const blockDim = 8;
+  const parallelSamples = 1;
   const whiteNoiseBufferSize = 512 * 512;
   const mainPassSize = renderQuarter ? gBuffer.quarterSize : gBuffer.size;
 
@@ -307,7 +308,9 @@ export const SDFRenderer = (
           OUTPUT_FORMAT: 'rgba8unorm',
           WIDTH: `${mainPassSize[0]}`,
           HEIGHT: `${mainPassSize[1]}`,
+          BLOCK_SIZE: `${blockDim}`,
           WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
+          PARALLEL_SAMPLES: `${parallelSamples}`,
         }),
       }),
       entryPoint: 'main_frag',
@@ -330,7 +333,9 @@ export const SDFRenderer = (
           OUTPUT_FORMAT: 'rgba16float',
           WIDTH: `${gBuffer.size[0]}`,
           HEIGHT: `${gBuffer.size[1]}`,
+          BLOCK_SIZE: `${blockDim}`,
           WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
+          PARALLEL_SAMPLES: `${parallelSamples}`,
         }),
       }),
       entryPoint: 'main_aux',
@@ -350,7 +355,7 @@ export const SDFRenderer = (
       mainPass.dispatchWorkgroups(
         Math.ceil(mainPassSize[0] / blockDim),
         Math.ceil(mainPassSize[1] / blockDim),
-        1,
+        parallelSamples,
       );
 
       mainPass.end();

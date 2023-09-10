@@ -1,5 +1,6 @@
 struct Material {
   color: vec3f,
+  roughness: f32,
   emissive: bool,
 }
 
@@ -31,17 +32,17 @@ struct SceneInfo {
 const MAX_DOMAINS = 16;
 const WIDTH = {{WIDTH}};
 const HEIGHT = {{HEIGHT}};
+const BLOCK_SIZE = {{BLOCK_SIZE}};
+const PARALLEL_SAMPLES = {{PARALLEL_SAMPLES}};
 const WHITE_NOISE_BUFFER_SIZE = {{WHITE_NOISE_BUFFER_SIZE}};
 const PI = 3.14159265359;
 const PI2 = 2. * PI;
-const BLOCK_SIZE = 8;
 const MAX_STEPS = 1000;
 const SURFACE_DIST = 0.0001;
-const SKY_SPHERE_RADIUS = 5;
 const SUPER_SAMPLES = 4;
 const SUB_SAMPLES = 4;
 const MAX_REFL = 3u;
-const FAR = 10000.;
+const FAR = 100.;
 
 const VEC3F_MAX = vec3f(1., 1., 1.);
 
@@ -102,10 +103,6 @@ fn sphere_sdf(pos: vec3f, o: vec3f, r: f32) -> f32 {
   return distance(pos, o) - r;
 }
 
-fn sky_sdf(pos: vec3f) -> f32 {
-  return SKY_SPHERE_RADIUS - length(pos);
-}
-
 fn world_sdf(pos: vec3f) -> f32 {
   var obj_idx = -1;
   var min_dist = FAR;
@@ -148,7 +145,7 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
     }
   }
 
-  if (obj_idx == -1) { // sky_sdf
+  if (obj_idx == -1) { // sky
     let dir = normalize(pos);
     (*out).emissive = true;
     (*out).color = sky_color(dir);
@@ -158,10 +155,12 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
 
     if (mat_idx == 0) {
       (*out).emissive = false;
+      (*out).roughness = 0.3;
       (*out).color = vec3f(1, 0.9, 0.8);
     }
     else if (mat_idx == 1) {
       (*out).emissive = false;
+      (*out).roughness = 1.;
       (*out).color = vec3f(0.5, 0.7, 1);
     }
     else if (mat_idx == 2) {
@@ -375,12 +374,15 @@ fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
   (*out).normal = world_normals(pos);
 }
 
-@compute @workgroup_size(BLOCK_SIZE, BLOCK_SIZE)
+var<workgroup> parallel_buffer: array<array<vec3f, PARALLEL_SAMPLES>, BLOCK_SIZE * BLOCK_SIZE>;
+
+@compute @workgroup_size(BLOCK_SIZE, BLOCK_SIZE, PARALLEL_SAMPLES)
 fn main_frag(
   @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
   @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
 ) {
   let lid = LocalInvocationID.xy;
+  let parallel_idx = LocalInvocationID.y * BLOCK_SIZE + LocalInvocationID.x;
 
   // var seed = (GlobalInvocationID.x * 17) + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT) + u32(time * 0.005) * 3931;
   var seed = (GlobalInvocationID.x + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT)) * (SUPER_SAMPLES * SUPER_SAMPLES * SUB_SAMPLES * MAX_REFL * 3 + 1 + u32(time));
@@ -421,8 +423,14 @@ fn main_frag(
             break;
           }
 
+          // Reflecting: 𝑟=𝑑−2(𝑑⋅𝑛)𝑛
+          let dn2 = 2. * dot(ray_dir, march_result.normal);
+          let refl_dir = ray_dir - dn2 * march_result.normal;
+
           ray_pos = march_result.position;
           ray_dir = rand_on_hemisphere(&seed, march_result.normal);
+          ray_dir = mix(refl_dir, ray_dir, march_result.material.roughness);
+          ray_dir = normalize(ray_dir);
         }
 
         acc += sub_acc;
@@ -431,6 +439,20 @@ fn main_frag(
   }
 
   acc /= SUB_SAMPLES * SUPER_SAMPLES * SUPER_SAMPLES;
+  parallel_buffer[parallel_idx][LocalInvocationID.z] = acc;
+
+  // Waiting for the whole shared memory to be filled.
+  workgroupBarrier();
+
+  if (LocalInvocationID.z != 0) {
+    return;
+  }
+  
+  acc = vec3f(0, 0, 0);
+  for (var i = 0; i < 1; i++) {
+    acc += parallel_buffer[parallel_idx][i];
+  }
+  acc /= PARALLEL_SAMPLES;
 
   textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
 }

@@ -13,7 +13,8 @@ function GameViewport() {
     engineRef.current = GameEngine(canvasRef.current);
   });
 
-  return <canvas ref={canvasRef} width="256" height="256" />;
+  /* Sometimes the pixel density varies from 1-to-1, so it might be double the resolution */
+  return <canvas ref={canvasRef} width="512" height="512" />;
 }
 
 export default GameViewport;
