@@ -1,8 +1,11 @@
+import { arrayOf, BufferWriter, object, Parsed, u32 } from 'typed-binary';
+
 import renderSDFWGSL from '../shaders/renderSDF.wgsl?raw';
 import { GBuffer } from '../gBuffer';
 import { preprocessShaderCode } from '../preprocessShaderCode';
 import { WhiteNoiseBuffer } from '../whiteNoiseBuffer';
 import { TimeInfoBuffer } from './timeInfoBuffer';
+import { Vec4f32 } from '../schema/primitive';
 
 // class Camera {
 //   private gpuBuffer: GPUBuffer;
@@ -20,6 +23,20 @@ import { TimeInfoBuffer } from './timeInfoBuffer';
 //     this.gpuBuffer.destroy();
 //   }
 // }
+
+type SceneInfoStruct = Parsed<typeof SceneInfoStruct>;
+const SceneInfoStruct = object({
+  numOfSpheres: u32,
+});
+
+type SphereStruct = Parsed<typeof SphereStruct>;
+const SphereStruct = object({
+  xyzr: Vec4f32,
+  materialIdx: u32,
+  _padding0: u32,
+  _padding1: u32,
+  _padding2: u32,
+});
 
 export const SDFRenderer = (
   device: GPUDevice,
@@ -72,6 +89,28 @@ export const SDFRenderer = (
     ],
   });
 
+  const sceneBindGroupLayout = device.createBindGroupLayout({
+    label: `${LABEL} - Scene Bind Group Layout`,
+    entries: [
+      // scene_info
+      {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'read-only-storage',
+        },
+      },
+      // scene_spheres
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'read-only-storage',
+        },
+      },
+    ],
+  });
+
   const auxBindGroupLayout = device.createBindGroupLayout({
     label: `${LABEL} - Aux Bind Group Layout`,
     entries: [
@@ -106,6 +145,80 @@ export const SDFRenderer = (
     ],
   });
 
+  const sceneSpheres: SphereStruct[] = [
+    {
+      xyzr: [-0.3, 0, 1, 0.2],
+      materialIdx: 1,
+      _padding0: 0,
+      _padding1: 0,
+      _padding2: 0,
+    },
+    {
+      xyzr: [0.4, 0, 1, 0.4],
+      materialIdx: 0,
+      _padding0: 0,
+      _padding1: 0,
+      _padding2: 0,
+    },
+    {
+      xyzr: [0, 0.7, 1, 0.2],
+      materialIdx: 2,
+      _padding0: 0,
+      _padding1: 0,
+      _padding2: 0,
+    },
+  ];
+
+  const sceneInfo: SceneInfoStruct = {
+    numOfSpheres: sceneSpheres.length,
+  };
+  const sceneInfoBuffer = device.createBuffer({
+    label: `${LABEL} - Scene Info Buffer`,
+    size: SceneInfoStruct.sizeOf(sceneInfo),
+    usage: GPUBufferUsage.STORAGE,
+    mappedAtCreation: true,
+  });
+  {
+    SceneInfoStruct.write(
+      new BufferWriter(sceneInfoBuffer.getMappedRange()),
+      sceneInfo,
+    );
+    sceneInfoBuffer.unmap();
+  }
+
+  const sceneSpheresBuffer = device.createBuffer({
+    label: `${LABEL} - Scene Spheres Buffer`,
+    size: SphereStruct.sizeOf(sceneSpheres[0]) * sceneSpheres.length,
+    usage: GPUBufferUsage.STORAGE,
+    mappedAtCreation: true,
+  });
+  {
+    const writer = new BufferWriter(sceneSpheresBuffer.getMappedRange());
+    for (let i = 0; i < sceneSpheres.length; ++i) {
+      SphereStruct.write(writer, sceneSpheres[i]);
+    }
+    sceneSpheresBuffer.unmap();
+  }
+
+  const sceneBindGroup = device.createBindGroup({
+    label: `${LABEL} - Scene Bind Group`,
+    layout: sceneBindGroupLayout,
+    entries: [
+      {
+        binding: 0,
+        resource: {
+          buffer: sceneInfoBuffer,
+        },
+      },
+      {
+        binding: 1,
+        resource: {
+          buffer: sceneSpheresBuffer,
+        },
+      },
+    ],
+  });
+
   const mainBindGroup = device.createBindGroup({
     label: `${LABEL} - Main Bind Group`,
     layout: mainBindGroupLayout,
@@ -131,7 +244,11 @@ export const SDFRenderer = (
   const mainPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
     layout: device.createPipelineLayout({
-      bindGroupLayouts: [sharedBindGroupLayout, mainBindGroupLayout],
+      bindGroupLayouts: [
+        sharedBindGroupLayout,
+        mainBindGroupLayout,
+        sceneBindGroupLayout,
+      ],
     }),
     compute: {
       module: device.createShaderModule({
@@ -150,7 +267,11 @@ export const SDFRenderer = (
   const auxPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
     layout: device.createPipelineLayout({
-      bindGroupLayouts: [sharedBindGroupLayout, auxBindGroupLayout],
+      bindGroupLayouts: [
+        sharedBindGroupLayout,
+        auxBindGroupLayout,
+        sceneBindGroupLayout,
+      ],
     }),
     compute: {
       module: device.createShaderModule({
@@ -175,6 +296,7 @@ export const SDFRenderer = (
       mainPass.setPipeline(mainPipeline);
       mainPass.setBindGroup(0, sharedBindGroup);
       mainPass.setBindGroup(1, mainBindGroup);
+      mainPass.setBindGroup(2, sceneBindGroup);
       mainPass.dispatchWorkgroups(
         Math.ceil(mainPassSize[0] / blockDim),
         Math.ceil(mainPassSize[1] / blockDim),
@@ -188,6 +310,7 @@ export const SDFRenderer = (
       auxPass.setPipeline(auxPipeline);
       auxPass.setBindGroup(0, sharedBindGroup);
       auxPass.setBindGroup(1, auxBindGroup);
+      auxPass.setBindGroup(2, sceneBindGroup);
       auxPass.dispatchWorkgroups(
         Math.ceil(gBuffer.size[0] / blockDim),
         Math.ceil(gBuffer.size[1] / blockDim),

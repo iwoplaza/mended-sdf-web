@@ -1,7 +1,7 @@
 import { GBufferDebugger } from './gBufferDebugger';
 import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 import { PostProcessingStep } from './postProcessingStep';
-import { ResampleStep } from './resampleStep/resampleStep';
+import { ResampleStep } from './resampleStep/resampleCubicStep';
 import { store } from '../store';
 import { GBuffer } from '../gBuffer';
 import { displayModeAtom } from '../DebugOptions';
@@ -36,6 +36,7 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
     targetFormat: 'rgba8unorm',
     sourceTexture: gBuffer.quarterView,
     targetTexture: gBuffer.upscaledView,
+    sourceSize: gBuffer.quarterSize,
   });
 
   const menderStep = MenderStep({

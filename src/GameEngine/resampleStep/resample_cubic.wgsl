@@ -42,7 +42,7 @@ fn main(
   tex_source10 = lerp(tex_source10, tex_source11, hg_y.z);      // weight along x direction
   tex_source00 = lerp(tex_source00, tex_source10, hg_x.z);
   
-  // return tex_source00;
+  return tex_source00;
   // Doing linear interpolation for now.
-  return textureSample(texture, clamping_smplr, uv);
+  // return textureSample(texture, clamping_smplr, uv);
 }

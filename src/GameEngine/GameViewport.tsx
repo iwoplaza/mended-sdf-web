@@ -13,7 +13,7 @@ function GameViewport() {
     engineRef.current = GameEngine(canvasRef.current);
   });
 
-  return <canvas ref={canvasRef} width="512" height="512" />;
+  return <canvas ref={canvasRef} width="256" height="256" />;
 }
 
 export default GameViewport;

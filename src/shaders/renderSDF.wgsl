@@ -14,6 +14,10 @@ struct SphereObj {
   material_idx: u32,
 }
 
+struct SceneInfo {
+  num_of_spheres: u32,
+}
+
 const WIDTH = {{WIDTH}};
 const HEIGHT = {{HEIGHT}};
 const WHITE_NOISE_BUFFER_SIZE = {{WHITE_NOISE_BUFFER_SIZE}};
@@ -24,7 +28,7 @@ const MAX_STEPS = 1000;
 const SURFACE_DIST = 0.0001;
 const SKY_SPHERE_RADIUS = 5;
 const SUPER_SAMPLES = 4;
-const SUB_SAMPLES = 32;
+const SUB_SAMPLES = 4;
 const MAX_REFL = 3u;
 
 const VEC3F_MAX = vec3f(1., 1., 1.);
@@ -33,6 +37,9 @@ const VEC3F_MAX = vec3f(1., 1., 1.);
 @group(0) @binding(1) var<uniform> time: f32;
 
 @group(1) @binding(0) var output_tex: texture_storage_2d<{{OUTPUT_FORMAT}}, write>;
+
+@group(2) @binding(0) var<storage, read> scene_info: SceneInfo;
+@group(2) @binding(1) var<storage, read> scene_spheres: array<SphereObj>;
 
 fn convert_rgb_to_y(rgb: vec3f) -> f32 {
   return 16./255. + (64.738 * rgb.r + 129.057 * rgb.g + 25.064 * rgb.b) / 255.;
@@ -98,50 +105,36 @@ fn O_sphere3_sdf(pos: vec3f) -> f32 {
 }
 
 fn world_sdf(pos: vec3f) -> f32 {
-  return min(
-    O_sphere1_sdf(pos),
-    min(
-    O_sphere2_sdf(pos),
-    min(
-    O_sphere3_sdf(pos),
-    O_sky_sdf(pos)
-  )));
+  var obj_idx = -1;
+  var min_dist = O_sky_sdf(pos);
+
+  for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
+    let obj_dist = sphere_sdf(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+
+    if (obj_dist < min_dist) {
+      min_dist = obj_dist;
+      obj_idx = i32(idx);
+    }
+  }
+
+  return min_dist;
 }
 
 fn world_material(pos: vec3f, out: ptr<function, Material>) {
-  var obj_idx = 0u;
-  var obj_dist = O_sky_sdf(pos);
-  var min_dist = obj_dist;
+  var obj_idx = -1;
+  var min_dist = O_sky_sdf(pos);
 
-  // 0u
-  obj_dist = O_sky_sdf(pos);
-  if (obj_dist < min_dist) {
-    obj_idx = 0u;
-    min_dist = obj_dist;
+  for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
+    let obj_dist = sphere_sdf(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+
+    if (obj_dist < min_dist) {
+      min_dist = obj_dist;
+      obj_idx = i32(idx);
+    }
   }
 
-  // 1u
-  obj_dist = O_sphere1_sdf(pos);
-  if (obj_dist < min_dist) {
-    obj_idx = 1u;
-    min_dist = obj_dist;
-  }
 
-  // 2u
-  obj_dist = O_sphere2_sdf(pos);
-  if (obj_dist < min_dist) {
-    obj_idx = 2u;
-    min_dist = obj_dist;
-  }
-
-  // 3u
-  obj_dist = O_sphere3_sdf(pos);
-  if (obj_dist < min_dist) {
-    obj_idx = 3u;
-    min_dist = obj_dist;
-  }
-
-  if (obj_idx == 0u) { // O_sky_sdf
+  if (obj_idx == -1) { // O_sky_sdf
     let dir = normalize(pos);
     let t = dir.y / 2. + 0.5;
     (*out).emissive = true;
@@ -157,17 +150,21 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
 
     // (*out).color = vec3f(0.4, 0.5, 0.6);
   }
-  else if (obj_idx == 1u) { // O_sphere1_sdf
-    (*out).emissive = false;
-    (*out).color = vec3f(1, 0.9, 0.8);
-  }
-  else if (obj_idx == 2u) { // O_sphere2_sdf
-    (*out).emissive = false;
-    (*out).color = vec3f(0.5, 0.7, 1);
-  }
-  else if (obj_idx == 3u) { // O_sphere3_sdf
-    (*out).emissive = true;
-    (*out).color = vec3f(0.5, 1, 0.7) * 10;
+  else {
+    let mat_idx = scene_spheres[obj_idx].material_idx;
+
+    if (mat_idx == 0) {
+      (*out).emissive = false;
+      (*out).color = vec3f(1, 0.9, 0.8);
+    }
+    else if (mat_idx == 1) {
+      (*out).emissive = false;
+      (*out).color = vec3f(0.5, 0.7, 1);
+    }
+    else if (mat_idx == 2) {
+      (*out).emissive = true;
+      (*out).color = vec3f(0.5, 1, 0.7) * 10;
+    }
   }
 }
 
@@ -310,7 +307,7 @@ fn main_aux(
   var emission_luminance = 0.;
   if (march_result.material.emissive) {
     emission_luminance = convert_rgb_to_y(mat_color);
-    albedo_luminance = 0;
+    // albedo_luminance = 0;
   }
 
   // var seed = GlobalInvocationID.x + GlobalInvocationID.y * WIDTH + GlobalInvocationID.z * WIDTH * HEIGHT;

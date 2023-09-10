@@ -9,7 +9,7 @@ export const TimeInfoBuffer = (device: GPUDevice, bufferUsage: number) => {
   return {
     buffer,
     update() {
-      cpuBuffer[0] = Date.now() % 7507;
+      cpuBuffer[0] = Date.now() % 1000;
 
       device.queue.writeBuffer(
         buffer,

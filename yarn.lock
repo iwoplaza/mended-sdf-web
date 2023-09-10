@@ -2318,10 +2318,10 @@ typed-array-length@^1.0.4:
     for-each "^0.3.3"
     is-typed-array "^1.1.9"
 
-typed-binary@1.2.2:
-  version "1.2.2"
-  resolved "https://registry.yarnpkg.com/typed-binary/-/typed-binary-1.2.2.tgz#41b6e4771fa270337e94ea6fd3eeb217d46fd45a"
-  integrity sha512-T/WtZKjrl1K6hIrDU2iIy/LG9Ma8VKCnzDzn5zK1tsCHzsVRz4eK9ovQLuD6IJ8tWc+MSkxiZsKgYqgQ+ge5SQ==
+typed-binary@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/typed-binary/-/typed-binary-2.0.0.tgz#eedb5423dd0453f983c76388befefab52372bb82"
+  integrity sha512-3FpDYkK1waUrEwOKBpsWwFmynsQGGUg+2RcSdDwMXO7P5VnbERfgoLaKiSqhHS3w5yqh5zXS7qK5BIiWqtw1ug==
 
 typescript@^5.0.2:
   version "5.1.6"
