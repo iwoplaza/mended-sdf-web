@@ -8,10 +8,7 @@ export enum MarchDomainKind {
 
 export type MarchDomainStruct = Parsed<typeof MarchDomainStruct>;
 export const MarchDomainStruct = object({
-  kind: u32,
-  _: pad(4 * 3),
-  pos: Vec3f32,
-  __: pad(4 * 1),
-  extra: Vec3f32, // radius or normal
-  ___: pad(4 * 1),
+  kind: pad(u32, 16),
+  pos: pad(Vec3f32, 16),
+  extra: pad(Vec3f32, 16), // radius or normal
 });

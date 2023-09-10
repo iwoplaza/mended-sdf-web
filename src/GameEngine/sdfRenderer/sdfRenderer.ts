@@ -5,25 +5,8 @@ import { GBuffer } from '../../gBuffer';
 import { preprocessShaderCode } from '../../preprocessShaderCode';
 import { WhiteNoiseBuffer } from '../../whiteNoiseBuffer';
 import { TimeInfoBuffer } from '../timeInfoBuffer';
-import { Vec4f32 } from '../../schema/primitive';
+import { pad, Vec4f32 } from '../../schema/primitive';
 import { MarchDomainKind, MarchDomainStruct } from './marchDomain';
-
-// class Camera {
-//   private gpuBuffer: GPUBuffer;
-
-//   private position: [number, number, number] = [0, 0, 0];
-
-//   constructor(device: GPUDevice) {
-//     this.gpuBuffer = device.createBuffer({
-//       size: 128,
-//       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-//     });
-//   }
-
-//   dispose() {
-//     this.gpuBuffer.destroy();
-//   }
-// }
 
 type SceneInfoStruct = Parsed<typeof SceneInfoStruct>;
 const SceneInfoStruct = object({
@@ -34,10 +17,7 @@ const SceneInfoStruct = object({
 type SphereStruct = Parsed<typeof SphereStruct>;
 const SphereStruct = object({
   xyzr: Vec4f32,
-  materialIdx: u32,
-  _padding0: u32,
-  _padding1: u32,
-  _padding2: u32,
+  materialIdx: pad(u32, 16),
 });
 
 function domainFromSphere(sphere: SphereStruct): MarchDomainStruct {
@@ -45,9 +25,6 @@ function domainFromSphere(sphere: SphereStruct): MarchDomainStruct {
 
   return {
     kind: MarchDomainKind.AABB,
-    _: undefined,
-    __: undefined,
-    ___: undefined,
     pos: [sphere.xyzr[0], sphere.xyzr[1], sphere.xyzr[2]],
     extra: [radius, radius, radius],
   };
@@ -173,23 +150,14 @@ export const SDFRenderer = (
     {
       xyzr: [-0.3, 0, 1, 0.2],
       materialIdx: 1,
-      _padding0: 0,
-      _padding1: 0,
-      _padding2: 0,
     },
     {
       xyzr: [0.4, 0, 1, 0.4],
       materialIdx: 0,
-      _padding0: 0,
-      _padding1: 0,
-      _padding2: 0,
     },
     {
       xyzr: [0, 0.7, 1, 0.2],
       materialIdx: 2,
-      _padding0: 0,
-      _padding1: 0,
-      _padding2: 0,
     },
   ];
 
