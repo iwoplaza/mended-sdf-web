@@ -6,7 +6,7 @@ import { store } from '../store';
 import { GBuffer } from '../gBuffer';
 import { displayModeAtom } from '../DebugOptions';
 import { MenderStep } from '../menderStep';
-import { SDFRenderer } from './sdfRenderer';
+import { SDFRenderer } from './sdfRenderer/sdfRenderer';
 import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
 
 export const GameEngine = async (canvas: HTMLCanvasElement) => {

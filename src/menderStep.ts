@@ -4,7 +4,7 @@ import convolveWGSL from './shaders/convolve.wgsl?raw';
 import fullScreenQuadWGSL from './shaders/fullScreenQuad.wgsl?raw';
 import combineWGSL from './shaders/finalizeMender.wgsl?raw';
 
-import { Model6 } from './model6';
+import { Model7 } from './model7';
 import { GBuffer } from './gBuffer';
 import { SceneSchema } from './schema/scene';
 import { NetworkLayer } from './networkLayer';
@@ -55,9 +55,9 @@ export const MenderStep = ({ device, gBuffer, targetTexture }: Options) => {
   //
 
   const convLayers = [
-    new NetworkLayer(device, Model6.Conv1Weight, Model6.Conv1Bias),
-    new NetworkLayer(device, Model6.Conv2Weight, Model6.Conv2Bias),
-    new NetworkLayer(device, Model6.Conv3Weight, Model6.Conv3Bias),
+    new NetworkLayer(device, Model7.Conv1Weight, Model7.Conv1Bias),
+    new NetworkLayer(device, Model7.Conv2Weight, Model7.Conv2Bias),
+    new NetworkLayer(device, Model7.Conv3Weight, Model7.Conv3Bias),
   ];
 
   //

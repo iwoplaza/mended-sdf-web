@@ -1,11 +1,12 @@
-import { arrayOf, BufferWriter, object, Parsed, u32 } from 'typed-binary';
+import { BufferWriter, object, Parsed, u32 } from 'typed-binary';
 
-import renderSDFWGSL from '../shaders/renderSDF.wgsl?raw';
-import { GBuffer } from '../gBuffer';
-import { preprocessShaderCode } from '../preprocessShaderCode';
-import { WhiteNoiseBuffer } from '../whiteNoiseBuffer';
-import { TimeInfoBuffer } from './timeInfoBuffer';
-import { Vec4f32 } from '../schema/primitive';
+import renderSDFWGSL from '../../shaders/renderSDF.wgsl?raw';
+import { GBuffer } from '../../gBuffer';
+import { preprocessShaderCode } from '../../preprocessShaderCode';
+import { WhiteNoiseBuffer } from '../../whiteNoiseBuffer';
+import { TimeInfoBuffer } from '../timeInfoBuffer';
+import { Vec4f32 } from '../../schema/primitive';
+import { MarchDomainKind, MarchDomainStruct } from './marchDomain';
 
 // class Camera {
 //   private gpuBuffer: GPUBuffer;
@@ -27,6 +28,7 @@ import { Vec4f32 } from '../schema/primitive';
 type SceneInfoStruct = Parsed<typeof SceneInfoStruct>;
 const SceneInfoStruct = object({
   numOfSpheres: u32,
+  numOfDomains: u32,
 });
 
 type SphereStruct = Parsed<typeof SphereStruct>;
@@ -37,6 +39,19 @@ const SphereStruct = object({
   _padding1: u32,
   _padding2: u32,
 });
+
+function domainFromSphere(sphere: SphereStruct): MarchDomainStruct {
+  const radius = sphere.xyzr[3];
+
+  return {
+    kind: MarchDomainKind.AABB,
+    _: undefined,
+    __: undefined,
+    ___: undefined,
+    pos: [sphere.xyzr[0], sphere.xyzr[1], sphere.xyzr[2]],
+    extra: [radius, radius, radius],
+  };
+}
 
 export const SDFRenderer = (
   device: GPUDevice,
@@ -108,6 +123,14 @@ export const SDFRenderer = (
           type: 'read-only-storage',
         },
       },
+      // domains
+      {
+        binding: 2,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'read-only-storage',
+        },
+      },
     ],
   });
 
@@ -169,8 +192,15 @@ export const SDFRenderer = (
     },
   ];
 
+  const domains: MarchDomainStruct[] = [];
+  for (let i = 0; i < sceneSpheres.length; ++i) {
+    domains.push(domainFromSphere(sceneSpheres[i]));
+  }
+  console.log(domains);
+
   const sceneInfo: SceneInfoStruct = {
     numOfSpheres: sceneSpheres.length,
+    numOfDomains: domains.length,
   };
   const sceneInfoBuffer = device.createBuffer({
     label: `${LABEL} - Scene Info Buffer`,
@@ -200,6 +230,20 @@ export const SDFRenderer = (
     sceneSpheresBuffer.unmap();
   }
 
+  const domainsBuffer = device.createBuffer({
+    label: `${LABEL} - Domains Buffer`,
+    size: MarchDomainStruct.sizeOf(domains[0]) * domains.length,
+    usage: GPUBufferUsage.STORAGE,
+    mappedAtCreation: true,
+  });
+  {
+    const writer = new BufferWriter(domainsBuffer.getMappedRange());
+    for (let i = 0; i < domains.length; ++i) {
+      MarchDomainStruct.write(writer, domains[i]);
+    }
+    domainsBuffer.unmap();
+  }
+
   const sceneBindGroup = device.createBindGroup({
     label: `${LABEL} - Scene Bind Group`,
     layout: sceneBindGroupLayout,
@@ -214,6 +258,12 @@ export const SDFRenderer = (
         binding: 1,
         resource: {
           buffer: sceneSpheresBuffer,
+        },
+      },
+      {
+        binding: 2,
+        resource: {
+          buffer: domainsBuffer,
         },
       },
     ],
