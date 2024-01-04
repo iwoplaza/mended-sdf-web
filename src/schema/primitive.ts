@@ -8,13 +8,19 @@ import {
   tupleOf,
 } from 'typed-binary';
 
+export type Vec2i32 = [number, number];
 export const Vec2i32 = tupleOf(i32, 2);
+export type Vec2f32 = [number, number];
 export const Vec2f32 = tupleOf(f32, 2);
 
+export type Vec3i32 = [number, number, number];
 export const Vec3i32 = tupleOf(i32, 3);
+export type Vec3f32 = [number, number, number];
 export const Vec3f32 = tupleOf(f32, 3);
 
+export type Vec4i32 = [number, number, number, number];
 export const Vec4i32 = tupleOf(i32, 4);
+export type Vec4f32 = [number, number, number, number];
 export const Vec4f32 = tupleOf(f32, 4);
 
 type IStableSchema = ReturnType<IRefResolver['resolve']>;

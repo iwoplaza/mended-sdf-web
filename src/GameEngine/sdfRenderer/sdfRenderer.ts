@@ -7,6 +7,7 @@ import { WhiteNoiseBuffer } from '../../whiteNoiseBuffer';
 import { TimeInfoBuffer } from '../timeInfoBuffer';
 import { pad, Vec4f32 } from '../../schema/primitive';
 import { MarchDomainKind, MarchDomainStruct } from './marchDomain';
+import { Camera } from './camera';
 
 type SceneInfoStruct = Parsed<typeof SceneInfoStruct>;
 const SceneInfoStruct = object({
@@ -37,9 +38,10 @@ export const SDFRenderer = (
 ) => {
   const LABEL = `SDF Renderer`;
   const blockDim = 8;
-  const parallelSamples = 1;
   const whiteNoiseBufferSize = 512 * 512;
   const mainPassSize = renderQuarter ? gBuffer.quarterSize : gBuffer.size;
+
+  const camera = new Camera(device);
 
   const whiteNoiseBuffer = WhiteNoiseBuffer(
     device,
@@ -93,7 +95,7 @@ export const SDFRenderer = (
           type: 'read-only-storage',
         },
       },
-      // scene_spheres
+      // view_matrix
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
@@ -104,6 +106,14 @@ export const SDFRenderer = (
       // domains
       {
         binding: 2,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: {
+          type: 'read-only-storage',
+        },
+      },
+      // scene_spheres
+      {
+        binding: 3,
         visibility: GPUShaderStage.COMPUTE,
         buffer: {
           type: 'read-only-storage',
@@ -165,7 +175,6 @@ export const SDFRenderer = (
   for (let i = 0; i < sceneSpheres.length; ++i) {
     domains.push(domainFromSphere(sceneSpheres[i]));
   }
-  console.log(domains);
 
   const sceneInfo: SceneInfoStruct = {
     numOfSpheres: sceneSpheres.length,
@@ -226,13 +235,19 @@ export const SDFRenderer = (
       {
         binding: 1,
         resource: {
-          buffer: sceneSpheresBuffer,
+          buffer: camera.gpuBuffer,
         },
       },
       {
         binding: 2,
         resource: {
           buffer: domainsBuffer,
+        },
+      },
+      {
+        binding: 3,
+        resource: {
+          buffer: sceneSpheresBuffer,
         },
       },
     ],
@@ -278,7 +293,6 @@ export const SDFRenderer = (
           HEIGHT: `${mainPassSize[1]}`,
           BLOCK_SIZE: `${blockDim}`,
           WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
-          PARALLEL_SAMPLES: `${parallelSamples}`,
         }),
       }),
       entryPoint: 'main_frag',
@@ -303,7 +317,6 @@ export const SDFRenderer = (
           HEIGHT: `${gBuffer.size[1]}`,
           BLOCK_SIZE: `${blockDim}`,
           WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
-          PARALLEL_SAMPLES: `${parallelSamples}`,
         }),
       }),
       entryPoint: 'main_aux',
@@ -313,6 +326,7 @@ export const SDFRenderer = (
   return {
     perform(commandEncoder: GPUCommandEncoder) {
       timeInfoBuffer.update();
+      camera.update();
 
       const mainPass = commandEncoder.beginComputePass();
 
@@ -323,7 +337,7 @@ export const SDFRenderer = (
       mainPass.dispatchWorkgroups(
         Math.ceil(mainPassSize[0] / blockDim),
         Math.ceil(mainPassSize[1] / blockDim),
-        parallelSamples,
+        1,
       );
 
       mainPass.end();

@@ -33,14 +33,13 @@ const MAX_DOMAINS = 16;
 const WIDTH = {{WIDTH}};
 const HEIGHT = {{HEIGHT}};
 const BLOCK_SIZE = {{BLOCK_SIZE}};
-const PARALLEL_SAMPLES = {{PARALLEL_SAMPLES}};
 const WHITE_NOISE_BUFFER_SIZE = {{WHITE_NOISE_BUFFER_SIZE}};
 const PI = 3.14159265359;
 const PI2 = 2. * PI;
 const MAX_STEPS = 1000;
 const SURFACE_DIST = 0.0001;
-const SUPER_SAMPLES = 4;
-const SUB_SAMPLES = 4;
+const SUPER_SAMPLES = 2;
+const SUB_SAMPLES = 32;
 const MAX_REFL = 3u;
 const FAR = 100.;
 
@@ -52,8 +51,9 @@ const VEC3F_MAX = vec3f(1., 1., 1.);
 @group(1) @binding(0) var output_tex: texture_storage_2d<{{OUTPUT_FORMAT}}, write>;
 
 @group(2) @binding(0) var<storage, read> scene_info: SceneInfo;
-@group(2) @binding(1) var<storage, read> scene_spheres: array<SphereObj>;
+@group(2) @binding(1) var<storage, read> view_matrix: mat4x4<f32>;
 @group(2) @binding(2) var<storage, read> domains: array<MarchDomain>;
+@group(2) @binding(3) var<storage, read> scene_spheres: array<SphereObj>;
 
 fn convert_rgb_to_y(rgb: vec3f) -> f32 {
   return 16./255. + (64.738 * rgb.r + 129.057 * rgb.g + 25.064 * rgb.b) / 255.;
@@ -61,10 +61,9 @@ fn convert_rgb_to_y(rgb: vec3f) -> f32 {
 
 fn randf(seed: ptr<function, u32>) -> f32 {
   let curr_seed = (*seed + 1) % WHITE_NOISE_BUFFER_SIZE;
-
   *seed = curr_seed;
 
-  return white_noise_buffer[curr_seed];
+  return fract(sin(f32(curr_seed) * 0.01 * 12.9898) * 43758.5453123);
 }
 
 fn rand_in_unit_cube(seed: ptr<function, u32>) -> vec3f {
@@ -181,11 +180,11 @@ fn world_normals(point: vec3f) -> vec3f {
   let yDistance = world_sdf(offY);
   let zDistance = world_sdf(offZ);
 
-  return vec3f(
+  return normalize(vec3f(
     (xDistance - centerDistance),
     (yDistance - centerDistance),
     (zDistance - centerDistance),
-  ) / epsilon;
+  ) / epsilon);
 }
 
 struct RayHitInfo {
@@ -290,9 +289,10 @@ fn sort_primitives(ray_pos: vec3f, ray_dir: vec3f, out_hit_order: ptr<function, 
 }
 
 fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
-  var dir = vec3f(
+  var dir = vec4f(
     (coord / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
-    1.
+    1.,
+    0.
   );
 
   let hspan = 1.;
@@ -301,8 +301,8 @@ fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<funct
   dir.x *= hspan;
   dir.y *= -vspan;
 
-  *out_pos = vec3f(0, 0, 0);
-  *out_dir = normalize(dir);
+  *out_pos = (view_matrix * vec4f(0, 0, 0, 1)).xyz;
+  *out_dir = normalize((view_matrix * dir).xyz);
 }
 
 fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
@@ -374,9 +374,7 @@ fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
   (*out).normal = world_normals(pos);
 }
 
-var<workgroup> parallel_buffer: array<array<vec3f, PARALLEL_SAMPLES>, BLOCK_SIZE * BLOCK_SIZE>;
-
-@compute @workgroup_size(BLOCK_SIZE, BLOCK_SIZE, PARALLEL_SAMPLES)
+@compute @workgroup_size(BLOCK_SIZE, BLOCK_SIZE, 1)
 fn main_frag(
   @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
   @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
@@ -395,22 +393,13 @@ fn main_frag(
   for (var sx = 0; sx < SUPER_SAMPLES; sx++) {
     for (var sy = 0; sy < SUPER_SAMPLES; sy++) {
       let offset = vec2f(
-        f32(sx) / SUPER_SAMPLES,
-        f32(sy) / SUPER_SAMPLES,
+        (f32(sx) + 0.5) / SUPER_SAMPLES,
+        (f32(sy) + 0.5) / SUPER_SAMPLES,
       );
       
       for (var ss = 0u; ss < SUB_SAMPLES; ss++) {
-        // Anti-aliasing
-        // TODO: Offset in view space, not in world space.
-        // TODO: Maybe offset by sub-pixel density?.
-        // let offset = vec2f(
-        //   randf(&seed),
-        //   randf(&seed),
-        // );
-
         construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
         
-        // let offset = rand_in_circle(&seed) * 0.5 + vec2f(0.5, 0.5);
         var sub_acc = vec3f(1., 1., 1.);
 
         for (var refl = 0u; refl < MAX_REFL; refl++) {
@@ -433,26 +422,15 @@ fn main_frag(
           ray_dir = normalize(ray_dir);
         }
 
+        // clipping
+        sub_acc = min(sub_acc, vec3f(1., 1., 1.));
+
         acc += sub_acc;
       }
     }
   }
 
   acc /= SUB_SAMPLES * SUPER_SAMPLES * SUPER_SAMPLES;
-  parallel_buffer[parallel_idx][LocalInvocationID.z] = acc;
-
-  // Waiting for the whole shared memory to be filled.
-  workgroupBarrier();
-
-  if (LocalInvocationID.z != 0) {
-    return;
-  }
-  
-  acc = vec3f(0, 0, 0);
-  for (var i = 0; i < 1; i++) {
-    acc += parallel_buffer[parallel_idx][i];
-  }
-  acc /= PARALLEL_SAMPLES;
 
   textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
 }
@@ -466,9 +444,15 @@ fn main_aux(
   var ray_pos = vec3f(0, 0, 0);
   var ray_dir = vec3f(0, 0, 1);
 
-  construct_ray(vec2f(GlobalInvocationID.xy), &ray_pos, &ray_dir);
-
   var march_result: MarchResult;
+
+  let offset = vec2f(
+    0.5,
+    0.5,
+  );
+      
+  construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
+
   march(ray_pos, ray_dir, &march_result);
 
   let world_normal = march_result.normal;
@@ -478,16 +462,14 @@ fn main_aux(
   var albedo_luminance = convert_rgb_to_y(mat_color);
   var emission_luminance = 0.;
   if (march_result.material.emissive) {
-    emission_luminance = convert_rgb_to_y(mat_color);
-    // albedo_luminance = 0;
+    emission_luminance = albedo_luminance;
   }
 
-  // var seed = GlobalInvocationID.x + GlobalInvocationID.y * WIDTH + GlobalInvocationID.z * WIDTH * HEIGHT;
-
+  // TODO: Transform this normal into view-space
   let view_normal = vec2f(world_normal.x, world_normal.y);
 
   let aux = vec4(
-    view_normal.xy,
+    view_normal,
     albedo_luminance,
     emission_luminance
   );
