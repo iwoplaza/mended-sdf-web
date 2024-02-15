@@ -13,7 +13,7 @@ export class Camera {
   update() {
     const origin = vec3.fromValues(0, 0, 1);
     const eyePosition = vec3.fromValues(0, 0, 0);
-    const upVector = vec3.fromValues(0, 1, 0);
+    // const upVector = vec3.fromValues(0, 1, 0);
 
     const rad = Math.PI * (Date.now() / 5000);
     const rotation = mat4.rotateY(mat4.translation(origin), rad);

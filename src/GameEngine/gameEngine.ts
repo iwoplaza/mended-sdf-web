@@ -1,5 +1,5 @@
 import { GBufferDebugger } from './gBufferDebugger';
-import { GBufferMeshRenderer } from './gBufferMeshRenderer';
+// import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 import { PostProcessingStep } from './postProcessingStep';
 import { ResampleStep } from './resampleStep/resampleCubicStep';
 import { store } from '../store';
@@ -30,7 +30,7 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
 
   const sdfRenderer = SDFRenderer(device, gBuffer, true);
   const traditionalSdfRenderer = SDFRenderer(device, gBuffer, false);
-  const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
+  // const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
 
   const upscaleStep = ResampleStep({
     device,
