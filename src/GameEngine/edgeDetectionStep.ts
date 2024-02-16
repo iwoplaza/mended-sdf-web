@@ -61,7 +61,7 @@ export const EdgeDetectionStep = ({
   };
 
   const sceneUniformBuffer = device.createBuffer({
-    size: SceneSchema.sizeOf(scene),
+    size: SceneSchema.measure(scene).size,
     usage: GPUBufferUsage.UNIFORM,
     mappedAtCreation: true,
   });

@@ -1,14 +1,17 @@
-import { Parsed, object, u32 } from 'typed-binary';
-import { Vec3f32, pad } from '../../schema/primitive';
+import { arrayOf, object, u32, vec3f } from 'wigsill';
+import type { Parsed } from 'typed-binary';
 
 export enum MarchDomainKind {
   AABB = 0,
   PLANE = 1,
 }
 
+export const MAX_DOMAINS = 64;
+
 export type MarchDomainStruct = Parsed<typeof MarchDomainStruct>;
 export const MarchDomainStruct = object({
-  kind: pad(u32, 16),
-  pos: pad(Vec3f32, 16),
-  extra: pad(Vec3f32, 16), // radius or normal
+  kind: u32,
+  pos: vec3f,
+  extra: vec3f, // radius or normal
 });
+export const MarchDomainArray = arrayOf(MarchDomainStruct, MAX_DOMAINS);

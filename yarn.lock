@@ -2313,10 +2313,10 @@ typed-array-length@^1.0.4:
     for-each "^0.3.3"
     is-typed-array "^1.1.9"
 
-typed-binary@^2.0.0:
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/typed-binary/-/typed-binary-2.0.0.tgz#eedb5423dd0453f983c76388befefab52372bb82"
-  integrity sha512-3FpDYkK1waUrEwOKBpsWwFmynsQGGUg+2RcSdDwMXO7P5VnbERfgoLaKiSqhHS3w5yqh5zXS7qK5BIiWqtw1ug==
+typed-binary@^3.2.0:
+  version "3.2.0"
+  resolved "https://registry.yarnpkg.com/typed-binary/-/typed-binary-3.2.0.tgz#23b0519041f40e4f3638ee248ec63d8418b99ae3"
+  integrity sha512-Qfc/P0AosTvm9Fgmhw+MmDxRPep2FTjDEYKwT2ics8r0VVu7ExCVCXCOx5Hpn0lEHOmm+oqrT2YjWwmk3pi45g==
 
 typescript@^5.0.2:
   version "5.1.6"
@@ -2398,6 +2398,13 @@ which@^2.0.1:
   integrity sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==
   dependencies:
     isexe "^2.0.0"
+
+wigsill@0.0.0-alpha.0:
+  version "0.0.0-alpha.0"
+  resolved "https://registry.yarnpkg.com/wigsill/-/wigsill-0.0.0-alpha.0.tgz#365faa18cfcb816347ef0717fd5ab7104923ef1f"
+  integrity sha512-RgnfOYUa5PbLoBbAQH0Qca2v2IvN16hd24tkc4aAppHCZ9DavsC93JgdBr8akoXnfXqR6+P0C+IbDdxHwvtkCg==
+  dependencies:
+    typed-binary "^3.2.0"
 
 wrappy@1:
   version "1.0.2"

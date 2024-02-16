@@ -32,7 +32,7 @@ export const PostProcessingStep = ({
   });
 
   // Eagerly filling the buffer
-  const sceneUniformData = new ArrayBuffer(SceneSchema.sizeOf(scene));
+  const sceneUniformData = new ArrayBuffer(SceneSchema.measure(scene).size);
   const bufferWriter = new BufferWriter(sceneUniformData);
   SceneSchema.write(bufferWriter, scene);
 

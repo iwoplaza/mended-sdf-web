@@ -1,13 +1,503 @@
-import { BufferWriter, object, Parsed, u32 } from 'typed-binary';
+import { wgsl, resolveProgram, u32, object, vec4f, arrayOf } from 'wigsill';
+import { BufferWriter, MaxValue, Parsed } from 'typed-binary';
 
-import renderSDFWGSL from '../../shaders/renderSDF.wgsl?raw';
+const OutputFormat = wgsl.param('output_format');
+const RenderTargetWidth = wgsl.param('render_target_width');
+const RenderTargetHeight = wgsl.param('render_target_height');
+const BlockSize = wgsl.param('block_size');
+const WhiteNoiseBufferSize = wgsl.param('white_noise_buffer_size');
+
+const MainShaderCode = wgsl.code`
+struct Material {
+  color: vec3f,
+  roughness: f32,
+  emissive: bool,
+}
+
+struct MarchResult {
+  position: vec3f,
+  material: Material,
+  normal: vec3f,
+}
+
+struct SphereObj {
+  xyzr: vec4f,
+  material_idx: u32,
+}
+
+const DOMAIN_AABB = 0u;
+const DOMAIN_PLANE = 1u;
+
+struct MarchDomain {
+  kind: u32,
+  pos: vec3f,
+  extra: vec3f,
+}
+
+struct SceneInfo {
+  num_of_spheres: u32,
+  num_of_domains: u32,
+}
+
+const MAX_DOMAINS = 16;
+const WIDTH = ${RenderTargetWidth};
+const HEIGHT = ${RenderTargetHeight};
+const BLOCK_SIZE = ${BlockSize};
+const PI = 3.14159265359;
+const PI2 = 2. * PI;
+const MAX_STEPS = 1000;
+const SURFACE_DIST = 0.0001;
+const SUPER_SAMPLES = 2;
+const SUB_SAMPLES = 32;
+const MAX_REFL = 3u;
+const FAR = 100.;
+
+const VEC3F_MAX = vec3f(1., 1., 1.);
+
+@group(0) @binding(0) var<storage, read> white_noise_buffer: array<f32, ${WhiteNoiseBufferSize}>;
+@group(0) @binding(1) var<uniform> time: f32;
+
+@group(1) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;
+
+@group(2) @binding(0) var<storage, read> scene_info: SceneInfo;
+@group(2) @binding(1) var<storage, read> view_matrix: mat4x4<f32>;
+@group(2) @binding(2) var<storage, read> domains: array<MarchDomain>;
+@group(2) @binding(3) var<storage, read> scene_spheres: array<SphereObj>;
+
+fn convert_rgb_to_y(rgb: vec3f) -> f32 {
+  return 16./255. + (64.738 * rgb.r + 129.057 * rgb.g + 25.064 * rgb.b) / 255.;
+}
+
+fn randf(seed: ptr<function, u32>) -> f32 {
+  let curr_seed = (*seed + 1) % ${WhiteNoiseBufferSize};
+  *seed = curr_seed;
+
+  return fract(sin(f32(curr_seed) * 0.01 * 12.9898) * 43758.5453123);
+}
+
+fn rand_in_unit_cube(seed: ptr<function, u32>) -> vec3f {
+  return vec3f(
+    randf(seed) * 2. - 1.,
+    randf(seed) * 2. - 1.,
+    randf(seed) * 2. - 1.,
+  );
+}
+
+fn rand_in_circle(seed: ptr<function, u32>) -> vec2f {
+  let radius = sqrt(randf(seed));
+  let angle = randf(seed) * 2 * PI;
+
+  return vec2f(
+    cos(angle) * radius,
+    sin(angle) * radius,
+  );
+}
+
+fn rand_on_hemisphere(seed: ptr<function, u32>, normal: vec3f) -> vec3f {
+  var value = rand_in_unit_cube(seed);
+
+  if (dot(normal, value) < 0.) {
+    value *= -1.;
+  }
+
+  value += normal * 0.1;
+  
+  return normalize(value);
+}
+
+// -- SDF
+
+fn sphere_sdf(pos: vec3f, o: vec3f, r: f32) -> f32 {
+  return distance(pos, o) - r;
+}
+
+fn world_sdf(pos: vec3f) -> f32 {
+  var obj_idx = -1;
+  var min_dist = FAR;
+
+  for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
+    let obj_dist = sphere_sdf(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+
+    if (obj_dist < min_dist) {
+      min_dist = obj_dist;
+      obj_idx = i32(idx);
+    }
+  }
+
+  return min_dist;
+}
+
+fn sky_color(dir: vec3f) -> vec3f {
+  let t = dir.y / 2. + 0.5;
+  
+  let uv = floor(30.0 * dir.xy);
+  let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
+
+  return mix(
+    vec3f(0.1, 0.15, 0.5),
+    vec3f(0.7, 0.9, 1),
+    t,
+  ) * mix(1., 0., c);
+}
+
+fn world_material(pos: vec3f, out: ptr<function, Material>) {
+  var obj_idx = -1;
+  var min_dist = FAR;
+
+  for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
+    let obj_dist = sphere_sdf(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+
+    if (obj_dist < min_dist) {
+      min_dist = obj_dist;
+      obj_idx = i32(idx);
+    }
+  }
+
+  if (obj_idx == -1) { // sky
+    let dir = normalize(pos);
+    (*out).emissive = true;
+    (*out).color = sky_color(dir);
+  }
+  else {
+    let mat_idx = scene_spheres[obj_idx].material_idx;
+
+    if (mat_idx == 0) {
+      (*out).emissive = false;
+      (*out).roughness = 0.3;
+      (*out).color = vec3f(1, 0.9, 0.8);
+    }
+    else if (mat_idx == 1) {
+      (*out).emissive = false;
+      (*out).roughness = 1.;
+      (*out).color = vec3f(0.5, 0.7, 1);
+    }
+    else if (mat_idx == 2) {
+      (*out).emissive = true;
+      (*out).color = vec3f(0.5, 1, 0.7) * 10;
+    }
+  }
+}
+
+fn world_normals(point: vec3f) -> vec3f {
+  let epsilon = SURFACE_DIST * 0.1; // arbitrary - should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
+  let offX = vec3f(point.x + epsilon, point.y, point.z);
+  let offY = vec3f(point.x, point.y + epsilon, point.z);
+  let offZ = vec3f(point.x, point.y, point.z + epsilon);
+  
+  let centerDistance = world_sdf(point);
+  let xDistance = world_sdf(offX);
+  let yDistance = world_sdf(offY);
+  let zDistance = world_sdf(offZ);
+
+  return normalize(vec3f(
+    (xDistance - centerDistance),
+    (yDistance - centerDistance),
+    (zDistance - centerDistance),
+  ) / epsilon);
+}
+
+struct RayHitInfo {
+  start: f32,
+  end: f32,
+}
+
+/**
+ * Calcs intersection and exit distances, and normal at intersection.
+ * The ray must be in box/object space. If you have multiple boxes all
+ * aligned to the same axis, you can precompute 1/rd. If you have
+ * multiple boxes but they are not alligned to each other, use the 
+ * "Generic" box intersector bellow this one.
+ * 
+ * @see {https://iquilezles.org/articles/boxfunctions/}
+ * @author {Inigo Quilez}
+ */
+fn ray_to_box(ro: vec3f, inv_ray_dir: vec3f, rad: vec3f, near_hit: ptr<function, f32>, far_hit: ptr<function, f32>) {
+  let n = inv_ray_dir * ro;
+
+  let k = abs(inv_ray_dir) * rad;
+
+  let t1 = -n - k;
+  let t2 = -n + k;
+
+  let tN = max(max(t1.x, t1.y), t1.z);
+  let tF = min(min(t2.x, t2.y), t2.z);
+
+  if(tN > tF || tF < 0.)
+  {
+    // no intersection
+    *near_hit = -1.;
+    *far_hit = -1.;
+  }
+  else
+  {
+    *near_hit = tN;
+    *far_hit = tF;
+  }
+}
+
+/**
+ * @param pn Plane normal. Must be normalized
+ */
+fn ray_to_plane(ro: vec3f, rd: vec3f, pn: vec3f, d: f32) -> f32 {
+  return -(dot(ro, pn) + d) / dot(rd, pn);
+}
+
+fn sort_primitives(ray_pos: vec3f, ray_dir: vec3f, out_hit_order: ptr<function, array<RayHitInfo, MAX_DOMAINS>>) -> u32 {
+  var list_length = 0u;
+
+  let inv_ray_dir = vec3f(
+    1. / ray_dir.x,
+    1. / ray_dir.y,
+    1. / ray_dir.z,
+  );
+
+  for (var i = 0u; i < scene_info.num_of_domains; i++) {
+    var domain = domains[i];
+
+    var near_hit = -1.;
+    var far_hit = -1.;
+
+    if (domain.kind == DOMAIN_PLANE) {
+      if (dot(ray_dir, domain.extra /* normal */) < 0) {
+        let d = -dot(domain.pos, domain.extra /* normal */);
+        near_hit = ray_to_plane(ray_pos, ray_dir, domain.extra /* normal */, d);
+        far_hit = FAR;
+      }
+    }
+    else {
+      ray_to_box(ray_pos - domain.pos, inv_ray_dir, domain.extra, &near_hit, &far_hit);
+    }
+
+    if (near_hit < 0) {
+      continue;
+    }
+
+    // Insertion sort
+    let el = &(*out_hit_order)[list_length];
+    (*el).start = near_hit;
+    (*el).end = far_hit;
+
+    for (var s = list_length - 1; s >= 0; s--) {
+      let elA = &(*out_hit_order)[s];
+      let elB = &(*out_hit_order)[s + 1];
+      if ((*elA).start <= (*elB).start)
+      {
+        // Good order
+        break;
+      }
+
+      // Swap
+      let tmp = *elA;
+      *elA = *elB;
+      *elB = tmp;
+    }
+    list_length++;
+  }
+
+  return list_length;
+}
+
+fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
+  var dir = vec4f(
+    (coord / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
+    1.,
+    0.
+  );
+
+  let hspan = 1.;
+  let vspan = 1.;
+
+  dir.x *= hspan;
+  dir.y *= -vspan;
+
+  *out_pos = (view_matrix * vec4f(0, 0, 0, 1)).xyz;
+  *out_dir = normalize((view_matrix * dir).xyz);
+}
+
+fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
+  var hit_order = array<RayHitInfo, MAX_DOMAINS>();
+  let hit_domains = sort_primitives(ray_pos, ray_dir, /*out*/ &hit_order);
+
+  // Did not hit any domains
+  if (hit_domains == 0) {
+    // Sky color
+    (*out).material.color = sky_color(ray_dir);
+    (*out).material.emissive = true;
+    (*out).normal = -ray_dir;
+    return;
+  }
+
+  var pos = ray_pos;
+  var prev_dist = -1.;
+  var min_dist = FAR;
+
+  for (var b = 0u; b < hit_domains; b++) {
+    prev_dist = -1.;
+    var progress = hit_order[b].start - SURFACE_DIST;
+
+    for (var step = 0u; step <= MAX_STEPS; step++) {
+      pos = ray_pos + ray_dir * progress;
+      min_dist = world_sdf(pos);
+
+      // Inside volume?
+      if (min_dist <= 0. && prev_dist > 0.) {
+        // No need to check more objects.
+        b = hit_domains;
+        break;
+      }
+
+      if (min_dist < SURFACE_DIST && min_dist < prev_dist) {
+        // No need to check more objects.
+        b = hit_domains;
+        break;
+      }
+
+      // march forward safely
+      progress += min_dist;
+
+      if (progress > hit_order[b].end)
+      {
+        // Stop checking this domain.
+        break;
+      }
+
+      prev_dist = min_dist;
+    }
+  }
+
+  (*out).position = pos;
+
+  // Not near surface or distance rising?
+  if (min_dist > SURFACE_DIST * 2. || min_dist > prev_dist)
+  {
+    // Sky
+    (*out).material.color = sky_color(ray_dir);
+    (*out).material.emissive = true;
+    (*out).normal = -ray_dir;
+    return;
+  }
+
+  var material: Material;
+  world_material(pos, &material);
+  (*out).material = material;
+  (*out).normal = world_normals(pos);
+}
+
+@compute @workgroup_size(${BlockSize}, ${BlockSize}, 1)
+fn main_frag(
+  @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
+  @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
+) {
+  let lid = LocalInvocationID.xy;
+  let parallel_idx = LocalInvocationID.y * ${BlockSize} + LocalInvocationID.x;
+
+  // var seed = (GlobalInvocationID.x * 17) + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT) + u32(time * 0.005) * 3931;
+  var seed = (GlobalInvocationID.x + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT)) * (SUPER_SAMPLES * SUPER_SAMPLES * SUB_SAMPLES * MAX_REFL * 3 + 1 + u32(time));
+
+  var acc = vec3f(0., 0., 0.);
+  var march_result: MarchResult;
+  var ray_pos = vec3f(0, 0, 0);
+  var ray_dir = vec3f(0, 0, 1);
+
+  for (var sx = 0; sx < SUPER_SAMPLES; sx++) {
+    for (var sy = 0; sy < SUPER_SAMPLES; sy++) {
+      let offset = vec2f(
+        (f32(sx) + 0.5) / SUPER_SAMPLES,
+        (f32(sy) + 0.5) / SUPER_SAMPLES,
+      );
+      
+      for (var ss = 0u; ss < SUB_SAMPLES; ss++) {
+        construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
+        
+        var sub_acc = vec3f(1., 1., 1.);
+
+        for (var refl = 0u; refl < MAX_REFL; refl++) {
+          march(ray_pos, ray_dir, &march_result);
+
+          sub_acc *= march_result.material.color;
+          // sub_acc *= march_result.normal;
+
+          if (march_result.material.emissive) {
+            break;
+          }
+
+          // Reflecting: 𝑟=𝑑−2(𝑑⋅𝑛)𝑛
+          let dn2 = 2. * dot(ray_dir, march_result.normal);
+          let refl_dir = ray_dir - dn2 * march_result.normal;
+
+          ray_pos = march_result.position;
+          ray_dir = rand_on_hemisphere(&seed, march_result.normal);
+          ray_dir = mix(refl_dir, ray_dir, march_result.material.roughness);
+          ray_dir = normalize(ray_dir);
+        }
+
+        // clipping
+        sub_acc = min(sub_acc, vec3f(1., 1., 1.));
+
+        acc += sub_acc;
+      }
+    }
+  }
+
+  acc /= SUB_SAMPLES * SUPER_SAMPLES * SUPER_SAMPLES;
+
+  textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
+}
+
+@compute @workgroup_size(${BlockSize}, ${BlockSize})
+fn main_aux(
+  @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
+  @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
+) {
+  let lid = LocalInvocationID.xy;
+  var ray_pos = vec3f(0, 0, 0);
+  var ray_dir = vec3f(0, 0, 1);
+
+  var march_result: MarchResult;
+
+  let offset = vec2f(
+    0.5,
+    0.5,
+  );
+      
+  construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
+
+  march(ray_pos, ray_dir, &march_result);
+
+  let world_normal = march_result.normal;
+  let white = vec3f(1., 1., 1.);
+  let mat_color = min(march_result.material.color, white);
+
+  var albedo_luminance = convert_rgb_to_y(mat_color);
+  var emission_luminance = 0.;
+  if (march_result.material.emissive) {
+    emission_luminance = albedo_luminance;
+  }
+
+  // TODO: Transform this normal into view-space
+  let view_normal = vec2f(world_normal.x, world_normal.y);
+
+  let aux = vec4(
+    view_normal,
+    albedo_luminance,
+    emission_luminance
+  );
+
+  textureStore(output_tex, GlobalInvocationID.xy, aux);
+}
+`;
+
 import { GBuffer } from '../../gBuffer';
-import { preprocessShaderCode } from '../../preprocessShaderCode';
+import { MAX_SPHERES } from '../../schema/scene';
 import { WhiteNoiseBuffer } from '../../whiteNoiseBuffer';
 import { TimeInfoBuffer } from '../timeInfoBuffer';
-import { pad, Vec4f32 } from '../../schema/primitive';
-import { MarchDomainKind, MarchDomainStruct } from './marchDomain';
+import {
+  MarchDomainArray,
+  MarchDomainKind,
+  MarchDomainStruct,
+} from './marchDomain';
 import { Camera } from './camera';
+import { roundUp } from '../mathUtils';
 
 type SceneInfoStruct = Parsed<typeof SceneInfoStruct>;
 const SceneInfoStruct = object({
@@ -17,9 +507,10 @@ const SceneInfoStruct = object({
 
 type SphereStruct = Parsed<typeof SphereStruct>;
 const SphereStruct = object({
-  xyzr: Vec4f32,
-  materialIdx: pad(u32, 16),
+  xyzr: vec4f,
+  materialIdx: u32,
 });
+const SphereStructArray = arrayOf(SphereStruct, MAX_SPHERES);
 
 function domainFromSphere(sphere: SphereStruct): MarchDomainStruct {
   const radius = sphere.xyzr[3];
@@ -182,7 +673,7 @@ export const SDFRenderer = (
   };
   const sceneInfoBuffer = device.createBuffer({
     label: `${LABEL} - Scene Info Buffer`,
-    size: SceneInfoStruct.sizeOf(sceneInfo),
+    size: roundUp(SceneInfoStruct.measure(sceneInfo).size, 16),
     usage: GPUBufferUsage.STORAGE,
     mappedAtCreation: true,
   });
@@ -196,7 +687,7 @@ export const SDFRenderer = (
 
   const sceneSpheresBuffer = device.createBuffer({
     label: `${LABEL} - Scene Spheres Buffer`,
-    size: SphereStruct.sizeOf(sceneSpheres[0]) * sceneSpheres.length,
+    size: roundUp(SphereStructArray.measure(MaxValue).size, 16),
     usage: GPUBufferUsage.STORAGE,
     mappedAtCreation: true,
   });
@@ -210,7 +701,7 @@ export const SDFRenderer = (
 
   const domainsBuffer = device.createBuffer({
     label: `${LABEL} - Domains Buffer`,
-    size: MarchDomainStruct.sizeOf(domains[0]) * domains.length,
+    size: roundUp(MarchDomainArray.measure(MaxValue).size, 16),
     usage: GPUBufferUsage.STORAGE,
     mappedAtCreation: true,
   });
@@ -275,6 +766,18 @@ export const SDFRenderer = (
     ],
   });
 
+  const mainProgram = resolveProgram(device, MainShaderCode, {
+    bindingGroup: 10,
+    shaderStage: GPUShaderStage.COMPUTE,
+    params: [
+      [OutputFormat, 'rgba8unorm'],
+      [RenderTargetWidth, mainPassSize[0]],
+      [RenderTargetHeight, mainPassSize[1]],
+      [BlockSize, blockDim],
+      [WhiteNoiseBufferSize, whiteNoiseBufferSize],
+    ],
+  });
+
   const mainPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
     layout: device.createPipelineLayout({
@@ -287,16 +790,22 @@ export const SDFRenderer = (
     compute: {
       module: device.createShaderModule({
         label: `${LABEL} - Main Shader`,
-        code: preprocessShaderCode(renderSDFWGSL, {
-          OUTPUT_FORMAT: 'rgba8unorm',
-          WIDTH: `${mainPassSize[0]}`,
-          HEIGHT: `${mainPassSize[1]}`,
-          BLOCK_SIZE: `${blockDim}`,
-          WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
-        }),
+        code: mainProgram.code,
       }),
       entryPoint: 'main_frag',
     },
+  });
+
+  const auxProgram = resolveProgram(device, MainShaderCode, {
+    bindingGroup: 10,
+    shaderStage: GPUShaderStage.COMPUTE,
+    params: [
+      [OutputFormat, 'rgba16float'],
+      [RenderTargetWidth, gBuffer.size[0]],
+      [RenderTargetHeight, gBuffer.size[1]],
+      [BlockSize, blockDim],
+      [WhiteNoiseBufferSize, whiteNoiseBufferSize],
+    ],
   });
 
   const auxPipeline = device.createComputePipeline({
@@ -311,13 +820,7 @@ export const SDFRenderer = (
     compute: {
       module: device.createShaderModule({
         label: `${LABEL} - Aux Shader`,
-        code: preprocessShaderCode(renderSDFWGSL, {
-          OUTPUT_FORMAT: 'rgba16float',
-          WIDTH: `${gBuffer.size[0]}`,
-          HEIGHT: `${gBuffer.size[1]}`,
-          BLOCK_SIZE: `${blockDim}`,
-          WHITE_NOISE_BUFFER_SIZE: `${whiteNoiseBufferSize}`,
-        }),
+        code: auxProgram.code,
       }),
       entryPoint: 'main_aux',
     },

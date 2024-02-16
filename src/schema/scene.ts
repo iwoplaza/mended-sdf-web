@@ -1,8 +1,9 @@
-import { object, Parsed } from 'typed-binary';
-
-import { Vec2i32 } from './primitive';
+import { Parsed } from 'typed-binary';
+import { object, vec2i } from 'wigsill';
 
 export type SceneSchema = Parsed<typeof SceneSchema>;
 export const SceneSchema = object({
-  canvasSize: Vec2i32,
+  canvasSize: vec2i,
 });
+
+export const MAX_SPHERES = 64;

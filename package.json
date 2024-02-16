@@ -32,7 +32,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "stanford-dragon": "^1.1.1",
-    "typed-binary": "^2.0.0",
-    "wgpu-matrix": "^2.4.2"
+    "typed-binary": "^3.2.0",
+    "wgpu-matrix": "^2.4.2",
+    "wigsill": "0.0.0-alpha.0"
   }
 }

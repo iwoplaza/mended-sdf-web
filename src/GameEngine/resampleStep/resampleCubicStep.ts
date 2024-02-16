@@ -1,13 +1,13 @@
-import { BufferWriter, object } from 'typed-binary';
+import { BufferWriter } from 'typed-binary';
+import { object, vec2i, vec2f } from 'wigsill';
 
-import { Vec2f32, Vec2i32 } from '../../schema/primitive';
 import fullScreenQuadWGSL from '../../shaders/fullScreenQuad.wgsl?raw';
 import resampleWGSL from './resample_cubic.wgsl?raw';
 
 const CanvasSchema = object({
-  size: Vec2i32,
-  e_x: Vec2f32, // texel size in x direction
-  e_y: Vec2f32, // texel size in y direction
+  size: vec2i,
+  e_x: vec2f, // texel size in x direction
+  e_y: vec2f, // texel size in y direction
 });
 
 /**
@@ -135,7 +135,7 @@ export const ResampleStep = ({
   };
 
   const canvasBuffer = device.createBuffer({
-    size: CanvasSchema.sizeOf(canvas),
+    size: CanvasSchema.measure(canvas).size,
     usage: GPUBufferUsage.UNIFORM,
     mappedAtCreation: true,
   });

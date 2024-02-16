@@ -1,11 +1,11 @@
+import { store } from '../store';
+import { GBuffer } from '../gBuffer';
+import { MenderStep } from '../menderStep';
+import { displayModeAtom } from '../DebugOptions';
 import { GBufferDebugger } from './gBufferDebugger';
 // import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 import { PostProcessingStep } from './postProcessingStep';
 import { ResampleStep } from './resampleStep/resampleCubicStep';
-import { store } from '../store';
-import { GBuffer } from '../gBuffer';
-import { displayModeAtom } from '../DebugOptions';
-import { MenderStep } from '../menderStep';
 import { SDFRenderer } from './sdfRenderer/sdfRenderer';
 import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
 
