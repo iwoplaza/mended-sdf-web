@@ -1,5 +1,14 @@
-import { wgsl, resolveProgram, u32, object, vec4f, arrayOf } from 'wigsill';
+import {
+  ProgramBuilder,
+  wgsl,
+  u32,
+  object,
+  vec4f,
+  arrayOf,
+  WGSLRuntime,
+} from 'wigsill';
 import { BufferWriter, MaxValue, Parsed } from 'typed-binary';
+import { sdf } from './sdf';
 
 const OutputFormat = wgsl.param('output_format');
 const RenderTargetWidth = wgsl.param('render_target_width');
@@ -68,55 +77,14 @@ fn convert_rgb_to_y(rgb: vec3f) -> f32 {
   return 16./255. + (64.738 * rgb.r + 129.057 * rgb.g + 25.064 * rgb.b) / 255.;
 }
 
-fn randf(seed: ptr<function, u32>) -> f32 {
-  let curr_seed = (*seed + 1) % ${WhiteNoiseBufferSize};
-  *seed = curr_seed;
-
-  return fract(sin(f32(curr_seed) * 0.01 * 12.9898) * 43758.5453123);
-}
-
-fn rand_in_unit_cube(seed: ptr<function, u32>) -> vec3f {
-  return vec3f(
-    randf(seed) * 2. - 1.,
-    randf(seed) * 2. - 1.,
-    randf(seed) * 2. - 1.,
-  );
-}
-
-fn rand_in_circle(seed: ptr<function, u32>) -> vec2f {
-  let radius = sqrt(randf(seed));
-  let angle = randf(seed) * 2 * PI;
-
-  return vec2f(
-    cos(angle) * radius,
-    sin(angle) * radius,
-  );
-}
-
-fn rand_on_hemisphere(seed: ptr<function, u32>, normal: vec3f) -> vec3f {
-  var value = rand_in_unit_cube(seed);
-
-  if (dot(normal, value) < 0.) {
-    value *= -1.;
-  }
-
-  value += normal * 0.1;
-  
-  return normalize(value);
-}
-
 // -- SDF
-
-fn sphere_sdf(pos: vec3f, o: vec3f, r: f32) -> f32 {
-  return distance(pos, o) - r;
-}
 
 fn world_sdf(pos: vec3f) -> f32 {
   var obj_idx = -1;
   var min_dist = FAR;
 
   for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
-    let obj_dist = sphere_sdf(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+    let obj_dist = ${sdf.sphere}(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
 
     if (obj_dist < min_dist) {
       min_dist = obj_dist;
@@ -145,7 +113,7 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
   var min_dist = FAR;
 
   for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
-    let obj_dist = sphere_sdf(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+    let obj_dist = ${sdf.sphere}(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
 
     if (obj_dist < min_dist) {
       min_dist = obj_dist;
@@ -391,8 +359,7 @@ fn main_frag(
   let lid = LocalInvocationID.xy;
   let parallel_idx = LocalInvocationID.y * ${BlockSize} + LocalInvocationID.x;
 
-  // var seed = (GlobalInvocationID.x * 17) + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT) + u32(time * 0.005) * 3931;
-  var seed = (GlobalInvocationID.x + GlobalInvocationID.y * (WIDTH) + GlobalInvocationID.z * (WIDTH * HEIGHT)) * (SUPER_SAMPLES * SUPER_SAMPLES * SUB_SAMPLES * MAX_REFL * 3 + 1 + u32(time));
+  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) + time * 0.312);
 
   var acc = vec3f(0., 0., 0.);
   var march_result: MarchResult;
@@ -426,7 +393,7 @@ fn main_frag(
           let refl_dir = ray_dir - dn2 * march_result.normal;
 
           ray_pos = march_result.position;
-          ray_dir = rand_on_hemisphere(&seed, march_result.normal);
+          ray_dir = ${randOnHemisphere}(march_result.normal);
           ray_dir = mix(refl_dir, ray_dir, march_result.material.roughness);
           ray_dir = normalize(ray_dir);
         }
@@ -498,6 +465,7 @@ import {
 } from './marchDomain';
 import { Camera } from './camera';
 import { roundUp } from '../mathUtils';
+import { randOnHemisphere, setupRandomSeed } from '../wgslUtils/random';
 
 type SceneInfoStruct = Parsed<typeof SceneInfoStruct>;
 const SceneInfoStruct = object({
@@ -766,17 +734,20 @@ export const SDFRenderer = (
     ],
   });
 
-  const mainProgram = resolveProgram(device, MainShaderCode, {
-    bindingGroup: 10,
-    shaderStage: GPUShaderStage.COMPUTE,
-    params: [
-      [OutputFormat, 'rgba8unorm'],
-      [RenderTargetWidth, mainPassSize[0]],
-      [RenderTargetHeight, mainPassSize[1]],
-      [BlockSize, blockDim],
-      [WhiteNoiseBufferSize, whiteNoiseBufferSize],
-    ],
-  });
+  const runtime = new WGSLRuntime(device);
+
+  const mainProgram = new ProgramBuilder(runtime, MainShaderCode)
+    // params
+    .provide(OutputFormat, 'rgba8unorm')
+    .provide(RenderTargetWidth, mainPassSize[0])
+    .provide(RenderTargetHeight, mainPassSize[1])
+    .provide(BlockSize, blockDim)
+    .provide(WhiteNoiseBufferSize, whiteNoiseBufferSize)
+    //
+    .build({
+      bindingGroup: 3,
+      shaderStage: GPUShaderStage.COMPUTE,
+    });
 
   const mainPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
@@ -785,6 +756,7 @@ export const SDFRenderer = (
         sharedBindGroupLayout,
         mainBindGroupLayout,
         sceneBindGroupLayout,
+        mainProgram.bindGroupLayout,
       ],
     }),
     compute: {
@@ -796,17 +768,18 @@ export const SDFRenderer = (
     },
   });
 
-  const auxProgram = resolveProgram(device, MainShaderCode, {
-    bindingGroup: 10,
-    shaderStage: GPUShaderStage.COMPUTE,
-    params: [
-      [OutputFormat, 'rgba16float'],
-      [RenderTargetWidth, gBuffer.size[0]],
-      [RenderTargetHeight, gBuffer.size[1]],
-      [BlockSize, blockDim],
-      [WhiteNoiseBufferSize, whiteNoiseBufferSize],
-    ],
-  });
+  const auxProgram = new ProgramBuilder(runtime, MainShaderCode)
+    // params
+    .provide(OutputFormat, 'rgba16float')
+    .provide(RenderTargetWidth, gBuffer.size[0])
+    .provide(RenderTargetHeight, gBuffer.size[1])
+    .provide(BlockSize, blockDim)
+    .provide(WhiteNoiseBufferSize, whiteNoiseBufferSize)
+    //
+    .build({
+      bindingGroup: 3,
+      shaderStage: GPUShaderStage.COMPUTE,
+    });
 
   const auxPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
@@ -815,6 +788,7 @@ export const SDFRenderer = (
         sharedBindGroupLayout,
         auxBindGroupLayout,
         sceneBindGroupLayout,
+        auxProgram.bindGroupLayout,
       ],
     }),
     compute: {
@@ -837,6 +811,7 @@ export const SDFRenderer = (
       mainPass.setBindGroup(0, sharedBindGroup);
       mainPass.setBindGroup(1, mainBindGroup);
       mainPass.setBindGroup(2, sceneBindGroup);
+      mainPass.setBindGroup(3, mainProgram.bindGroup);
       mainPass.dispatchWorkgroups(
         Math.ceil(mainPassSize[0] / blockDim),
         Math.ceil(mainPassSize[1] / blockDim),
@@ -851,6 +826,7 @@ export const SDFRenderer = (
       auxPass.setBindGroup(0, sharedBindGroup);
       auxPass.setBindGroup(1, auxBindGroup);
       auxPass.setBindGroup(2, sceneBindGroup);
+      auxPass.setBindGroup(3, auxProgram.bindGroup);
       auxPass.dispatchWorkgroups(
         Math.ceil(gBuffer.size[0] / blockDim),
         Math.ceil(gBuffer.size[1] / blockDim),
