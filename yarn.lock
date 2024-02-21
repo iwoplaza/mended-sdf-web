@@ -2313,11 +2313,6 @@ typed-array-length@^1.0.4:
     for-each "^0.3.3"
     is-typed-array "^1.1.9"
 
-typed-binary@^3.2.0:
-  version "3.2.0"
-  resolved "https://registry.yarnpkg.com/typed-binary/-/typed-binary-3.2.0.tgz#23b0519041f40e4f3638ee248ec63d8418b99ae3"
-  integrity sha512-Qfc/P0AosTvm9Fgmhw+MmDxRPep2FTjDEYKwT2ics8r0VVu7ExCVCXCOx5Hpn0lEHOmm+oqrT2YjWwmk3pi45g==
-
 typed-binary@^4.0.0-alpha.3:
   version "4.0.0-alpha.3"
   resolved "https://registry.yarnpkg.com/typed-binary/-/typed-binary-4.0.0-alpha.3.tgz#061313e1437a7fee0047c73068edebf107e6e918"
@@ -2404,12 +2399,12 @@ which@^2.0.1:
   dependencies:
     isexe "^2.0.0"
 
-wigsill@0.0.0-alpha.0:
-  version "0.0.0-alpha.0"
-  resolved "https://registry.yarnpkg.com/wigsill/-/wigsill-0.0.0-alpha.0.tgz#365faa18cfcb816347ef0717fd5ab7104923ef1f"
-  integrity sha512-RgnfOYUa5PbLoBbAQH0Qca2v2IvN16hd24tkc4aAppHCZ9DavsC93JgdBr8akoXnfXqR6+P0C+IbDdxHwvtkCg==
+wigsill@^0.0.0-alpha.2:
+  version "0.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/wigsill/-/wigsill-0.0.0-alpha.2.tgz#7d84d2ea37c953fd08887f25279e24090ccd2dd4"
+  integrity sha512-n/M/OwjnLzSGzGmnmmg9sp5d1Ti9BTDgY8MrOXX9SR0BAitg1QpCVcewW9OBbIjenq3WaIBbXXetUK4cFOlDsw==
   dependencies:
-    typed-binary "^3.2.0"
+    typed-binary "^4.0.0-alpha.3"
 
 wrappy@1:
   version "1.0.2"

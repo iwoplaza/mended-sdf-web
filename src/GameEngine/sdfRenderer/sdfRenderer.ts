@@ -46,8 +46,8 @@ const $camera = wgsl.memory(CameraStruct).alias('Main Camera');
 // TEST
 
 const sceneMemoryArena = makeArena({
-  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
-  bufferBindingType: 'read-only-storage',
+  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
+  bufferBindingType: 'uniform',
   minSize: 2144,
   memoryEntries: [$time, $camera, $sceneSpheres],
 });
@@ -65,16 +65,15 @@ struct MarchResult {
   normal: vec3f,
 }
 
-const MAX_DOMAINS = 16;
 const WIDTH = ${RenderTargetWidth};
 const HEIGHT = ${RenderTargetHeight};
 const BLOCK_SIZE = ${BlockSize};
 const PI = 3.14159265359;
 const PI2 = 2. * PI;
-const MAX_STEPS = 1000;
+const MAX_STEPS = 100;
 const SURFACE_DIST = 0.0001;
 const SUPER_SAMPLES = 2;
-const SUB_SAMPLES = 1;
+const SUB_SAMPLES = 32;
 const MAX_REFL = 3u;
 const FAR = 100.;
 
@@ -92,13 +91,12 @@ fn world_sdf(pos: vec3f) -> f32 {
   var obj_idx = -1;
   var min_dist = FAR;
 
-  for (var idx = 0u; idx < ${$sceneSpheres}.count; idx++) {
-    let obj_dist = ${sdf.sphere}(pos, ${$sceneSpheres}.values[idx].xyzr.xyz, ${$sceneSpheres}.values[idx].xyzr.w);
+  let count = ${$sceneSpheres}.count;
+  for (var idx = 0u; idx < count; idx++) {
+    let sphere_xyzr = ${$sceneSpheres}.values[idx].xyzr;
+    let obj_dist = ${sdf.sphere}(pos, sphere_xyzr.xyz, sphere_xyzr.w);
 
-    if (obj_dist < min_dist) {
-      min_dist = obj_dist;
-      obj_idx = i32(idx);
-    }
+    min_dist = min(obj_dist, min_dist);
   }
 
   return min_dist;
@@ -122,7 +120,8 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
   var min_dist = FAR;
 
   for (var idx = 0u; idx < ${$sceneSpheres}.count; idx++) {
-    let obj_dist = ${sdf.sphere}(pos, ${$sceneSpheres}.values[idx].xyzr.xyz, ${$sceneSpheres}.values[idx].xyzr.w);
+    let sphere_xyzr = ${$sceneSpheres}.values[idx].xyzr;
+    let obj_dist = ${sdf.sphere}(pos, sphere_xyzr.xyz, sphere_xyzr.w);
 
     if (obj_dist < min_dist) {
       min_dist = obj_dist;
@@ -178,47 +177,6 @@ struct RayHitInfo {
   end: f32,
 }
 
-/**
- * Calcs intersection and exit distances, and normal at intersection.
- * The ray must be in box/object space. If you have multiple boxes all
- * aligned to the same axis, you can precompute 1/rd. If you have
- * multiple boxes but they are not alligned to each other, use the 
- * "Generic" box intersector bellow this one.
- * 
- * @see {https://iquilezles.org/articles/boxfunctions/}
- * @author {Inigo Quilez}
- */
-fn ray_to_box(ro: vec3f, inv_ray_dir: vec3f, rad: vec3f, near_hit: ptr<function, f32>, far_hit: ptr<function, f32>) {
-  let n = inv_ray_dir * ro;
-
-  let k = abs(inv_ray_dir) * rad;
-
-  let t1 = -n - k;
-  let t2 = -n + k;
-
-  let tN = max(max(t1.x, t1.y), t1.z);
-  let tF = min(min(t2.x, t2.y), t2.z);
-
-  if(tN > tF || tF < 0.)
-  {
-    // no intersection
-    *near_hit = -1.;
-    *far_hit = -1.;
-  }
-  else
-  {
-    *near_hit = tN;
-    *far_hit = tF;
-  }
-}
-
-/**
- * @param pn Plane normal. Must be normalized
- */
-fn ray_to_plane(ro: vec3f, rd: vec3f, pn: vec3f, d: f32) -> f32 {
-  return -(dot(ro, pn) + d) / dot(rd, pn);
-}
-
 fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
   var dir = vec4f(
     (coord / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
@@ -232,8 +190,9 @@ fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<funct
   dir.x *= hspan;
   dir.y *= -vspan;
 
-  *out_pos = (${$camera}.inv_view_matrix * vec4f(0, 0, 0, 1)).xyz;
-  *out_dir = normalize((${$camera}.inv_view_matrix * dir).xyz);
+  let inv_view_matrix = ${$camera}.inv_view_matrix;
+  *out_pos = (inv_view_matrix * vec4f(0, 0, 0, 1)).xyz;
+  *out_dir = normalize((inv_view_matrix * dir).xyz);
 }
 
 fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {

@@ -6,4 +6,4 @@ export const SceneSchema = struct({
   canvasSize: vec2i,
 });
 
-export const MAX_SPHERES = 64;
+export const MAX_SPHERES = 10;
