@@ -1,4 +1,4 @@
-import { arrayOf, object, u32, vec3f } from 'wigsill';
+import { arrayOf, struct, u32, vec3f } from 'wigsill';
 import type { Parsed } from 'typed-binary';
 
 export enum MarchDomainKind {
@@ -9,7 +9,7 @@ export enum MarchDomainKind {
 export const MAX_DOMAINS = 64;
 
 export type MarchDomainStruct = Parsed<typeof MarchDomainStruct>;
-export const MarchDomainStruct = object({
+export const MarchDomainStruct = struct({
   kind: u32,
   pos: vec3f,
   extra: vec3f, // radius or normal

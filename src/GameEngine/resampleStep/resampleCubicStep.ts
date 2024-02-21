@@ -1,10 +1,10 @@
 import { BufferWriter } from 'typed-binary';
-import { object, vec2i, vec2f } from 'wigsill';
+import { struct, vec2i, vec2f } from 'wigsill';
 
 import fullScreenQuadWGSL from '../../shaders/fullScreenQuad.wgsl?raw';
 import resampleWGSL from './resample_cubic.wgsl?raw';
 
-const CanvasSchema = object({
+const CanvasSchema = struct({
   size: vec2i,
   e_x: vec2f, // texel size in x direction
   e_y: vec2f, // texel size in y direction

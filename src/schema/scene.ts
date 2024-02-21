@@ -1,8 +1,8 @@
 import { Parsed } from 'typed-binary';
-import { object, vec2i } from 'wigsill';
+import { struct, vec2i } from 'wigsill';
 
 export type SceneSchema = Parsed<typeof SceneSchema>;
-export const SceneSchema = object({
+export const SceneSchema = struct({
   canvasSize: vec2i,
 });
 

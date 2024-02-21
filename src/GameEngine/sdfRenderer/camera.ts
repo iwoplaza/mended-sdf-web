@@ -1,16 +1,14 @@
 import { mat4, vec3 } from 'wgpu-matrix';
+import { WGSLMemory, WGSLRuntime, mat4f, struct } from 'wigsill';
+
+export const CameraStruct = struct({
+  inv_view_matrix: mat4f,
+}).alias('CameraStruct');
 
 export class Camera {
-  public gpuBuffer: GPUBuffer;
+  constructor(private readonly memory: WGSLMemory<typeof CameraStruct>) {}
 
-  constructor(private device: GPUDevice) {
-    this.gpuBuffer = device.createBuffer({
-      size: 128,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-  }
-
-  update() {
+  update(runtime: WGSLRuntime) {
     const origin = vec3.fromValues(0, 0, 1);
     const eyePosition = vec3.fromValues(0, 0, 0);
     // const upVector = vec3.fromValues(0, 1, 0);
@@ -27,22 +25,15 @@ export class Camera {
 
     // const invViewMatrix = mat4.inverse(viewMatrix) as Float32Array;
 
-    const invViewMatrix = mat4.translation(
-      vec3.fromValues(Math.abs(Math.sin(rad * 2) * 0.2), 0, 0),
-    ) as Float32Array;
+    const invViewMatrix = [
+      ...mat4
+        .translation(vec3.fromValues(Math.abs(Math.sin(rad * 2) * 0.2), 0, 0))
+        .values(),
+    ];
+
+    // const invViewMatrix = [...mat4.identity().values()];
 
     // Writing to buffer
-
-    this.device.queue.writeBuffer(
-      this.gpuBuffer,
-      0,
-      invViewMatrix.buffer,
-      invViewMatrix.byteOffset,
-      invViewMatrix.byteLength,
-    );
-  }
-
-  dispose() {
-    this.gpuBuffer.destroy();
+    this.memory.write(runtime, { inv_view_matrix: invViewMatrix });
   }
 }

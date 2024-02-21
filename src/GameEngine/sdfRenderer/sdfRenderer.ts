@@ -2,19 +2,55 @@ import {
   ProgramBuilder,
   wgsl,
   u32,
-  object,
+  struct,
   vec4f,
-  arrayOf,
   WGSLRuntime,
+  f32,
+  makeArena,
+  dynamicArrayOf,
 } from 'wigsill';
-import { BufferWriter, MaxValue, Parsed } from 'typed-binary';
+import { Parsed } from 'typed-binary';
 import { sdf } from './sdf';
 
+// parameters
 const OutputFormat = wgsl.param('output_format');
 const RenderTargetWidth = wgsl.param('render_target_width');
 const RenderTargetHeight = wgsl.param('render_target_height');
 const BlockSize = wgsl.param('block_size');
 const WhiteNoiseBufferSize = wgsl.param('white_noise_buffer_size');
+
+type SphereStruct = Parsed<typeof SphereStruct>;
+const SphereStruct = struct({
+  xyzr: vec4f,
+  material_idx: u32,
+}).alias('SphereStruct');
+
+const $time = wgsl.memory(f32).alias('Time info');
+const $sceneSpheres = wgsl
+  .memory(dynamicArrayOf(SphereStruct, MAX_SPHERES).alias('SphereArray'))
+  .alias('Scene spheres');
+
+const $camera = wgsl.memory(CameraStruct).alias('Main Camera');
+
+// TEST
+// const nameMap = new WeakMap<any, string>();
+// function nameFor(value: unknown): string {
+//   if (nameMap.has(value)) {
+//     return nameMap.get(value)!;
+//   }
+
+//   const name = `#${Math.random()}`;
+//   nameMap.set(value, name);
+//   return name;
+// }
+// TEST
+
+const sceneMemoryArena = makeArena({
+  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+  bufferBindingType: 'read-only-storage',
+  minSize: 2144,
+  memoryEntries: [$time, $camera, $sceneSpheres],
+});
 
 const MainShaderCode = wgsl.code`
 struct Material {
@@ -29,25 +65,6 @@ struct MarchResult {
   normal: vec3f,
 }
 
-struct SphereObj {
-  xyzr: vec4f,
-  material_idx: u32,
-}
-
-const DOMAIN_AABB = 0u;
-const DOMAIN_PLANE = 1u;
-
-struct MarchDomain {
-  kind: u32,
-  pos: vec3f,
-  extra: vec3f,
-}
-
-struct SceneInfo {
-  num_of_spheres: u32,
-  num_of_domains: u32,
-}
-
 const MAX_DOMAINS = 16;
 const WIDTH = ${RenderTargetWidth};
 const HEIGHT = ${RenderTargetHeight};
@@ -57,21 +74,13 @@ const PI2 = 2. * PI;
 const MAX_STEPS = 1000;
 const SURFACE_DIST = 0.0001;
 const SUPER_SAMPLES = 2;
-const SUB_SAMPLES = 32;
+const SUB_SAMPLES = 1;
 const MAX_REFL = 3u;
 const FAR = 100.;
 
 const VEC3F_MAX = vec3f(1., 1., 1.);
 
-@group(0) @binding(0) var<storage, read> white_noise_buffer: array<f32, ${WhiteNoiseBufferSize}>;
-@group(0) @binding(1) var<uniform> time: f32;
-
-@group(1) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;
-
-@group(2) @binding(0) var<storage, read> scene_info: SceneInfo;
-@group(2) @binding(1) var<storage, read> view_matrix: mat4x4<f32>;
-@group(2) @binding(2) var<storage, read> domains: array<MarchDomain>;
-@group(2) @binding(3) var<storage, read> scene_spheres: array<SphereObj>;
+@group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;
 
 fn convert_rgb_to_y(rgb: vec3f) -> f32 {
   return 16./255. + (64.738 * rgb.r + 129.057 * rgb.g + 25.064 * rgb.b) / 255.;
@@ -83,8 +92,8 @@ fn world_sdf(pos: vec3f) -> f32 {
   var obj_idx = -1;
   var min_dist = FAR;
 
-  for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
-    let obj_dist = ${sdf.sphere}(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+  for (var idx = 0u; idx < ${$sceneSpheres}.count; idx++) {
+    let obj_dist = ${sdf.sphere}(pos, ${$sceneSpheres}.values[idx].xyzr.xyz, ${$sceneSpheres}.values[idx].xyzr.w);
 
     if (obj_dist < min_dist) {
       min_dist = obj_dist;
@@ -112,8 +121,8 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
   var obj_idx = -1;
   var min_dist = FAR;
 
-  for (var idx = 0u; idx < scene_info.num_of_spheres; idx++) {
-    let obj_dist = ${sdf.sphere}(pos, scene_spheres[idx].xyzr.xyz, scene_spheres[idx].xyzr.w);
+  for (var idx = 0u; idx < ${$sceneSpheres}.count; idx++) {
+    let obj_dist = ${sdf.sphere}(pos, ${$sceneSpheres}.values[idx].xyzr.xyz, ${$sceneSpheres}.values[idx].xyzr.w);
 
     if (obj_dist < min_dist) {
       min_dist = obj_dist;
@@ -127,7 +136,7 @@ fn world_material(pos: vec3f, out: ptr<function, Material>) {
     (*out).color = sky_color(dir);
   }
   else {
-    let mat_idx = scene_spheres[obj_idx].material_idx;
+    let mat_idx = ${$sceneSpheres}.values[obj_idx].material_idx;
 
     if (mat_idx == 0) {
       (*out).emissive = false;
@@ -210,61 +219,6 @@ fn ray_to_plane(ro: vec3f, rd: vec3f, pn: vec3f, d: f32) -> f32 {
   return -(dot(ro, pn) + d) / dot(rd, pn);
 }
 
-fn sort_primitives(ray_pos: vec3f, ray_dir: vec3f, out_hit_order: ptr<function, array<RayHitInfo, MAX_DOMAINS>>) -> u32 {
-  var list_length = 0u;
-
-  let inv_ray_dir = vec3f(
-    1. / ray_dir.x,
-    1. / ray_dir.y,
-    1. / ray_dir.z,
-  );
-
-  for (var i = 0u; i < scene_info.num_of_domains; i++) {
-    var domain = domains[i];
-
-    var near_hit = -1.;
-    var far_hit = -1.;
-
-    if (domain.kind == DOMAIN_PLANE) {
-      if (dot(ray_dir, domain.extra /* normal */) < 0) {
-        let d = -dot(domain.pos, domain.extra /* normal */);
-        near_hit = ray_to_plane(ray_pos, ray_dir, domain.extra /* normal */, d);
-        far_hit = FAR;
-      }
-    }
-    else {
-      ray_to_box(ray_pos - domain.pos, inv_ray_dir, domain.extra, &near_hit, &far_hit);
-    }
-
-    if (near_hit < 0) {
-      continue;
-    }
-
-    // Insertion sort
-    let el = &(*out_hit_order)[list_length];
-    (*el).start = near_hit;
-    (*el).end = far_hit;
-
-    for (var s = list_length - 1; s >= 0; s--) {
-      let elA = &(*out_hit_order)[s];
-      let elB = &(*out_hit_order)[s + 1];
-      if ((*elA).start <= (*elB).start)
-      {
-        // Good order
-        break;
-      }
-
-      // Swap
-      let tmp = *elA;
-      *elA = *elB;
-      *elB = tmp;
-    }
-    list_length++;
-  }
-
-  return list_length;
-}
-
 fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
   var dir = vec4f(
     (coord / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
@@ -278,59 +232,37 @@ fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<funct
   dir.x *= hspan;
   dir.y *= -vspan;
 
-  *out_pos = (view_matrix * vec4f(0, 0, 0, 1)).xyz;
-  *out_dir = normalize((view_matrix * dir).xyz);
+  *out_pos = (${$camera}.inv_view_matrix * vec4f(0, 0, 0, 1)).xyz;
+  *out_dir = normalize((${$camera}.inv_view_matrix * dir).xyz);
 }
 
 fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
-  var hit_order = array<RayHitInfo, MAX_DOMAINS>();
-  let hit_domains = sort_primitives(ray_pos, ray_dir, /*out*/ &hit_order);
-
-  // Did not hit any domains
-  if (hit_domains == 0) {
-    // Sky color
-    (*out).material.color = sky_color(ray_dir);
-    (*out).material.emissive = true;
-    (*out).normal = -ray_dir;
-    return;
-  }
-
   var pos = ray_pos;
   var prev_dist = -1.;
   var min_dist = FAR;
 
-  for (var b = 0u; b < hit_domains; b++) {
-    prev_dist = -1.;
-    var progress = hit_order[b].start - SURFACE_DIST;
+  prev_dist = -1.;
+  var progress = 0.;
 
-    for (var step = 0u; step <= MAX_STEPS; step++) {
-      pos = ray_pos + ray_dir * progress;
-      min_dist = world_sdf(pos);
+  for (var step = 0u; step <= MAX_STEPS; step++) {
+    pos = ray_pos + ray_dir * progress;
+    min_dist = world_sdf(pos);
 
-      // Inside volume?
-      if (min_dist <= 0. && prev_dist > 0.) {
-        // No need to check more objects.
-        b = hit_domains;
-        break;
-      }
-
-      if (min_dist < SURFACE_DIST && min_dist < prev_dist) {
-        // No need to check more objects.
-        b = hit_domains;
-        break;
-      }
-
-      // march forward safely
-      progress += min_dist;
-
-      if (progress > hit_order[b].end)
-      {
-        // Stop checking this domain.
-        break;
-      }
-
-      prev_dist = min_dist;
+    // Inside volume?
+    if (min_dist <= 0. && prev_dist > 0.) {
+      // No need to check more objects.
+      break;
     }
+
+    if (min_dist < SURFACE_DIST && min_dist < prev_dist) {
+      // No need to check more objects.
+      break;
+    }
+
+    // march forward safely
+    progress += min_dist;
+
+    prev_dist = min_dist;
   }
 
   (*out).position = pos;
@@ -359,7 +291,7 @@ fn main_frag(
   let lid = LocalInvocationID.xy;
   let parallel_idx = LocalInvocationID.y * ${BlockSize} + LocalInvocationID.x;
 
-  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) + time * 0.312);
+  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) + ${$time} * 0.312);
 
   var acc = vec3f(0., 0., 0.);
   var march_result: MarchResult;
@@ -456,39 +388,8 @@ fn main_aux(
 
 import { GBuffer } from '../../gBuffer';
 import { MAX_SPHERES } from '../../schema/scene';
-import { WhiteNoiseBuffer } from '../../whiteNoiseBuffer';
-import { TimeInfoBuffer } from '../timeInfoBuffer';
-import {
-  MarchDomainArray,
-  MarchDomainKind,
-  MarchDomainStruct,
-} from './marchDomain';
-import { Camera } from './camera';
-import { roundUp } from '../mathUtils';
+import { Camera, CameraStruct } from './camera';
 import { randOnHemisphere, setupRandomSeed } from '../wgslUtils/random';
-
-type SceneInfoStruct = Parsed<typeof SceneInfoStruct>;
-const SceneInfoStruct = object({
-  numOfSpheres: u32,
-  numOfDomains: u32,
-});
-
-type SphereStruct = Parsed<typeof SphereStruct>;
-const SphereStruct = object({
-  xyzr: vec4f,
-  materialIdx: u32,
-});
-const SphereStructArray = arrayOf(SphereStruct, MAX_SPHERES);
-
-function domainFromSphere(sphere: SphereStruct): MarchDomainStruct {
-  const radius = sphere.xyzr[3];
-
-  return {
-    kind: MarchDomainKind.AABB,
-    pos: [sphere.xyzr[0], sphere.xyzr[1], sphere.xyzr[2]],
-    extra: [radius, radius, radius],
-  };
-}
 
 export const SDFRenderer = (
   device: GPUDevice,
@@ -500,15 +401,7 @@ export const SDFRenderer = (
   const whiteNoiseBufferSize = 512 * 512;
   const mainPassSize = renderQuarter ? gBuffer.quarterSize : gBuffer.size;
 
-  const camera = new Camera(device);
-
-  const whiteNoiseBuffer = WhiteNoiseBuffer(
-    device,
-    whiteNoiseBufferSize,
-    GPUBufferUsage.STORAGE,
-  );
-
-  const timeInfoBuffer = TimeInfoBuffer(device, GPUBufferUsage.UNIFORM);
+  const camera = new Camera($camera);
 
   const mainBindGroupLayout = device.createBindGroupLayout({
     label: `${LABEL} - Main Bind Group Layout`,
@@ -518,64 +411,6 @@ export const SDFRenderer = (
         visibility: GPUShaderStage.COMPUTE,
         storageTexture: {
           format: 'rgba8unorm',
-        },
-      },
-    ],
-  });
-
-  const sharedBindGroupLayout = device.createBindGroupLayout({
-    label: `${LABEL} - Shared Bind Group Layout`,
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: {
-          type: 'read-only-storage',
-        },
-      },
-      {
-        binding: 1,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: {
-          type: 'uniform',
-        },
-      },
-    ],
-  });
-
-  const sceneBindGroupLayout = device.createBindGroupLayout({
-    label: `${LABEL} - Scene Bind Group Layout`,
-    entries: [
-      // scene_info
-      {
-        binding: 0,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: {
-          type: 'read-only-storage',
-        },
-      },
-      // view_matrix
-      {
-        binding: 1,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: {
-          type: 'read-only-storage',
-        },
-      },
-      // domains
-      {
-        binding: 2,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: {
-          type: 'read-only-storage',
-        },
-      },
-      // scene_spheres
-      {
-        binding: 3,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: {
-          type: 'read-only-storage',
         },
       },
     ],
@@ -594,123 +429,20 @@ export const SDFRenderer = (
     ],
   });
 
-  const sharedBindGroup = device.createBindGroup({
-    label: `${LABEL} - Shared Bind Group`,
-    layout: sharedBindGroupLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: {
-          label: `${LABEL} - White Noise Buffer`,
-          buffer: whiteNoiseBuffer,
-        },
-      },
-      {
-        binding: 1,
-        resource: {
-          label: `${LABEL} - Time Info`,
-          buffer: timeInfoBuffer.buffer,
-        },
-      },
-    ],
-  });
-
   const sceneSpheres: SphereStruct[] = [
     {
       xyzr: [-0.3, 0, 1, 0.2],
-      materialIdx: 1,
+      material_idx: 1,
     },
     {
       xyzr: [0.4, 0, 1, 0.4],
-      materialIdx: 0,
+      material_idx: 0,
     },
     {
       xyzr: [0, 0.7, 1, 0.2],
-      materialIdx: 2,
+      material_idx: 2,
     },
   ];
-
-  const domains: MarchDomainStruct[] = [];
-  for (let i = 0; i < sceneSpheres.length; ++i) {
-    domains.push(domainFromSphere(sceneSpheres[i]));
-  }
-
-  const sceneInfo: SceneInfoStruct = {
-    numOfSpheres: sceneSpheres.length,
-    numOfDomains: domains.length,
-  };
-  const sceneInfoBuffer = device.createBuffer({
-    label: `${LABEL} - Scene Info Buffer`,
-    size: roundUp(SceneInfoStruct.measure(sceneInfo).size, 16),
-    usage: GPUBufferUsage.STORAGE,
-    mappedAtCreation: true,
-  });
-  {
-    SceneInfoStruct.write(
-      new BufferWriter(sceneInfoBuffer.getMappedRange()),
-      sceneInfo,
-    );
-    sceneInfoBuffer.unmap();
-  }
-
-  const sceneSpheresBuffer = device.createBuffer({
-    label: `${LABEL} - Scene Spheres Buffer`,
-    size: roundUp(SphereStructArray.measure(MaxValue).size, 16),
-    usage: GPUBufferUsage.STORAGE,
-    mappedAtCreation: true,
-  });
-  {
-    const writer = new BufferWriter(sceneSpheresBuffer.getMappedRange());
-    for (let i = 0; i < sceneSpheres.length; ++i) {
-      SphereStruct.write(writer, sceneSpheres[i]);
-    }
-    sceneSpheresBuffer.unmap();
-  }
-
-  const domainsBuffer = device.createBuffer({
-    label: `${LABEL} - Domains Buffer`,
-    size: roundUp(MarchDomainArray.measure(MaxValue).size, 16),
-    usage: GPUBufferUsage.STORAGE,
-    mappedAtCreation: true,
-  });
-  {
-    const writer = new BufferWriter(domainsBuffer.getMappedRange());
-    for (let i = 0; i < domains.length; ++i) {
-      MarchDomainStruct.write(writer, domains[i]);
-    }
-    domainsBuffer.unmap();
-  }
-
-  const sceneBindGroup = device.createBindGroup({
-    label: `${LABEL} - Scene Bind Group`,
-    layout: sceneBindGroupLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: {
-          buffer: sceneInfoBuffer,
-        },
-      },
-      {
-        binding: 1,
-        resource: {
-          buffer: camera.gpuBuffer,
-        },
-      },
-      {
-        binding: 2,
-        resource: {
-          buffer: domainsBuffer,
-        },
-      },
-      {
-        binding: 3,
-        resource: {
-          buffer: sceneSpheresBuffer,
-        },
-      },
-    ],
-  });
 
   const mainBindGroup = device.createBindGroup({
     label: `${LABEL} - Main Bind Group`,
@@ -745,19 +477,15 @@ export const SDFRenderer = (
     .provide(WhiteNoiseBufferSize, whiteNoiseBufferSize)
     //
     .build({
-      bindingGroup: 3,
+      bindingGroup: 1,
       shaderStage: GPUShaderStage.COMPUTE,
+      arenas: [sceneMemoryArena],
     });
 
   const mainPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
     layout: device.createPipelineLayout({
-      bindGroupLayouts: [
-        sharedBindGroupLayout,
-        mainBindGroupLayout,
-        sceneBindGroupLayout,
-        mainProgram.bindGroupLayout,
-      ],
+      bindGroupLayouts: [mainBindGroupLayout, mainProgram.bindGroupLayout],
     }),
     compute: {
       module: device.createShaderModule({
@@ -777,19 +505,15 @@ export const SDFRenderer = (
     .provide(WhiteNoiseBufferSize, whiteNoiseBufferSize)
     //
     .build({
-      bindingGroup: 3,
+      bindingGroup: 1,
       shaderStage: GPUShaderStage.COMPUTE,
+      arenas: [sceneMemoryArena],
     });
 
   const auxPipeline = device.createComputePipeline({
     label: `${LABEL} - Pipeline`,
     layout: device.createPipelineLayout({
-      bindGroupLayouts: [
-        sharedBindGroupLayout,
-        auxBindGroupLayout,
-        sceneBindGroupLayout,
-        auxProgram.bindGroupLayout,
-      ],
+      bindGroupLayouts: [auxBindGroupLayout, auxProgram.bindGroupLayout],
     }),
     compute: {
       module: device.createShaderModule({
@@ -800,18 +524,18 @@ export const SDFRenderer = (
     },
   });
 
+  $sceneSpheres.write(runtime, sceneSpheres);
+
   return {
     perform(commandEncoder: GPUCommandEncoder) {
-      timeInfoBuffer.update();
-      camera.update();
+      $time.write(runtime, Date.now() % 1000);
+      camera.update(runtime);
 
       const mainPass = commandEncoder.beginComputePass();
 
       mainPass.setPipeline(mainPipeline);
-      mainPass.setBindGroup(0, sharedBindGroup);
-      mainPass.setBindGroup(1, mainBindGroup);
-      mainPass.setBindGroup(2, sceneBindGroup);
-      mainPass.setBindGroup(3, mainProgram.bindGroup);
+      mainPass.setBindGroup(0, mainBindGroup);
+      mainPass.setBindGroup(1, mainProgram.bindGroup);
       mainPass.dispatchWorkgroups(
         Math.ceil(mainPassSize[0] / blockDim),
         Math.ceil(mainPassSize[1] / blockDim),
@@ -823,10 +547,8 @@ export const SDFRenderer = (
       const auxPass = commandEncoder.beginComputePass();
 
       auxPass.setPipeline(auxPipeline);
-      auxPass.setBindGroup(0, sharedBindGroup);
-      auxPass.setBindGroup(1, auxBindGroup);
-      auxPass.setBindGroup(2, sceneBindGroup);
-      auxPass.setBindGroup(3, auxProgram.bindGroup);
+      auxPass.setBindGroup(0, auxBindGroup);
+      auxPass.setBindGroup(1, auxProgram.bindGroup);
       auxPass.dispatchWorkgroups(
         Math.ceil(gBuffer.size[0] / blockDim),
         Math.ceil(gBuffer.size[1] / blockDim),
