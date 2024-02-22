@@ -19,19 +19,19 @@ export const surfaceDist = wgsl.fn(
   'surface_dist',
 )`(ctx: ${ShapeContext}) -> f32 {
   let dist_from_camera = ctx.ray_distance;
-  return dist_from_camera / ${RenderTargetHeight} * 1.;
+  return dist_from_camera / ${RenderTargetHeight} * 0.05;
 }`;
 
 const obj_left_blob = wgsl.fn('obj_left_blob')`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(-0.3, 0., 1.), 0.2);
+  return ${sdf.sphere}(pos, vec3(-0.3, 0., -2.), 0.2);
 }`;
 
 const obj_center_blob = wgsl.fn('obj_center_blob')`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(0., 0.7, 1.), 0.2);
+  return ${sdf.sphere}(pos, vec3(0., 0.7, -2.), 0.2);
 }`;
 
 const obj_right_blob = wgsl.fn('obj_right_blob')`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(0.4, 0., 1.), 0.4);
+  return ${sdf.sphere}(pos, vec3(0.4, 0., -2.), 0.4);
 }`;
 
 export const FAR = wgsl.constant('100.');

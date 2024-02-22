@@ -1,15 +1,16 @@
 import {
+  makeArena,
   ProgramBuilder,
+  WGSLRuntime,
   wgsl,
   u32,
-  struct,
-  vec4f,
-  WGSLRuntime,
   f32,
-  makeArena,
+  vec4f,
+  struct,
   dynamicArrayOf,
+  vec3f,
 } from 'wigsill';
-import { Parsed } from 'typed-binary';
+import type { Parsed } from 'typed-binary';
 
 // parameters
 const OutputFormat = wgsl.param('output_format');
@@ -49,19 +50,114 @@ const sceneMemoryArena = makeArena({
   memoryEntries: [$time, $camera, $sceneSpheres],
 });
 
+const constructRayDir = wgsl.fn('construct_ray_dir')`(coord: vec2f) -> vec3f {
+  let viewport_size = vec2f(${RenderTargetWidth}, ${RenderTargetHeight});
+  var view_coords = (coord - viewport_size / 2.) / ${RenderTargetHeight};
+
+  var view_ray_dir = vec3f(
+    view_coords,
+    -1.,
+  );
+  view_ray_dir.y *= -1.;
+  view_ray_dir = normalize(view_ray_dir);
+
+  return view_ray_dir;
+}`;
+
+const Reflection = struct({
+  color: vec3f,
+  roughness: f32,
+});
+
+const MarchResult = struct({
+  steps: u32,
+  position: vec3f,
+});
+
+const renderSubPixel = wgsl.fn('render_sub_pixel')`(coord: vec2f) -> vec3f {
+  var start_dir = ${constructRayDir}(coord);
+
+  // applying camera transform
+  var start_pos = (${$camera}.inv_view_matrix * vec4f(0., 0., 0., 1.)).xyz;
+  start_dir = (${$camera}.inv_view_matrix * vec4f(start_dir, 0.)).xyz;
+
+  var acc = vec3f(0., 0., 0.);
+  for (var sub = 0u; sub < SUB_SAMPLES; sub++) {
+    var ray_pos = start_pos;
+    var ray_dir = start_dir;
+
+    var reflections: array<${Reflection}, MAX_REFL>;
+    var refl_count = 0u;
+    var emissive_color = vec3f(0., 0., 0.);
+
+    var shape_ctx: ${ShapeContext};
+    shape_ctx.ray_distance = 0.;
+
+    for (var refl = 0u; refl < MAX_REFL; refl++) {
+      var march_result: ${MarchResult};
+      shape_ctx.ray_dir = ray_dir;
+      march(ray_pos, &shape_ctx, &march_result);
+
+      if (march_result.steps >= MAX_STEPS) {
+        emissive_color = ${skyColor}(ray_dir);
+        break;
+      }
+
+      let normal = world_normals(march_result.position, shape_ctx);
+
+      var material: ${Material};
+      ${worldMat}(march_result.position, shape_ctx, &material);
+
+      if (material.emissive) {
+        emissive_color = material.albedo;
+        break;
+      }
+
+      // Reflecting: 𝑟=𝑑−2(𝑑⋅𝑛)𝑛
+      let view_slope = dot(ray_dir, normal);
+      let dn2 = 2. * view_slope;
+      let refl_dir = ray_dir - dn2 * normal;
+
+      let fresnel = 1. - pow(1. + view_slope, 16.);
+      let roughness = material.roughness * fresnel;
+
+      ray_pos = march_result.position;
+      ray_dir = ${randOnHemisphere}(normal);
+      ray_dir = mix(refl_dir, ray_dir, roughness);
+      ray_dir = normalize(ray_dir);
+
+      reflections[refl_count].color = material.albedo;
+      reflections[refl_count].roughness = roughness;
+      refl_count++;
+    }
+
+    var sub_acc = emissive_color;
+    for (var i = i32(refl_count) - 1; i >= 0; i--) {
+      let mat_color = reflections[i].color;
+      let reflectivity = 1. - reflections[i].roughness;
+      // sub_acc *= reflections[i].color;
+      sub_acc *= mix(mat_color, ${ONES_3F}, reflectivity);
+      sub_acc += mat_color * (reflectivity);
+    }
+
+    acc += sub_acc;
+  }
+
+  acc /= f32(SUB_SAMPLES);
+
+  // clipping
+  acc = min(acc, ${ONES_3F});
+
+  return acc;
+}`;
+
 const MainShaderCode = wgsl.code`
 
-struct MarchResult {
-  position: vec3f,
-  material: ${Material},
-  normal: vec3f,
-}
-
 const MAX_STEPS = 100;
-const SUPER_SAMPLES = 2;
-const SUB_SAMPLES = 16;
+const SUPER_SAMPLES = 4;
+const ONE_OVER_SUPER_SAMPLES = 1. / SUPER_SAMPLES;
+const SUB_SAMPLES = 32;
 const MAX_REFL = 3u;
-const FAR = 100.;
 
 @group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;
 
@@ -89,38 +185,20 @@ fn world_normals(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
   ) / epsilon);
 }
 
-fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
-  var dir = vec4f(
-    (coord / vec2f(${RenderTargetWidth}, ${RenderTargetHeight})) * 2. - 1.,
-    1.,
-    0.
-  );
-
-  let hspan = 1.;
-  let vspan = 1.;
-
-  dir.x *= hspan;
-  dir.y *= -vspan;
-
-  let inv_view_matrix = ${$camera}.inv_view_matrix;
-  *out_pos = (inv_view_matrix * vec4f(0, 0, 0, 1)).xyz;
-  *out_dir = normalize((inv_view_matrix * dir).xyz);
-}
-
-fn march(ray_pos: vec3f, ray_dir: vec3f, ctx: ptr<function, ${ShapeContext}>, out: ptr<function, MarchResult>) {
+fn march(ray_pos: vec3f, ctx: ptr<function, ${ShapeContext}>, out: ptr<function, ${MarchResult}>) {
   var pos = ray_pos;
   var prev_dist = -1.;
-  var min_dist = FAR;
+  var min_dist = ${FAR};
 
-  prev_dist = -1.;
+  var step = 0u;
   var progress = 0.;
 
-  for (var step = 0u; step <= MAX_STEPS; step++) {
-    pos = ray_pos + ray_dir * progress;
+  for (; step <= MAX_STEPS; step++) {
+    pos = ray_pos + (*ctx).ray_dir * progress;
     min_dist = ${worldSdf}(pos);
 
     // Inside volume?
-    if (min_dist <= 0. && prev_dist > 0.) {
+    if (min_dist <= 0.) {
       // No need to check more objects.
       break;
     }
@@ -134,25 +212,24 @@ fn march(ray_pos: vec3f, ray_dir: vec3f, ctx: ptr<function, ${ShapeContext}>, ou
     progress += min_dist;
     (*ctx).ray_distance += min_dist;
 
+    if (progress > ${FAR}) {
+      // Stop checking.
+      break;
+    }
+
     prev_dist = min_dist;
   }
 
   (*out).position = pos;
 
   // Not near surface or distance rising?
-  if (min_dist > ${surfaceDist}(*ctx) * 2. || min_dist > prev_dist)
-  {
+  if (min_dist > ${surfaceDist}(*ctx) * 2. || min_dist > prev_dist) {
     // Sky
-    (*out).material.albedo = ${skyColor}(ray_dir);
-    (*out).material.emissive = true;
-    (*out).normal = -ray_dir;
+    (*out).steps = MAX_STEPS + 1u;
     return;
   }
 
-  var material: ${Material};
-  ${worldMat}(pos, *ctx, &material);
-  (*out).material = material;
-  (*out).normal = world_normals(pos, *ctx);
+  (*out).steps = step;
 }
 
 @compute @workgroup_size(${BlockSize}, ${BlockSize}, 1)
@@ -166,54 +243,18 @@ fn main_frag(
   ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) + ${$time} * 0.312);
 
   var acc = vec3f(0., 0., 0.);
-  var march_result: MarchResult;
-  var ray_pos = vec3f(0, 0, 0);
-  var ray_dir = vec3f(0, 0, 1);
-
-  for (var sx = 0; sx < SUPER_SAMPLES; sx++) {
-    for (var sy = 0; sy < SUPER_SAMPLES; sy++) {
+  for (var sx = 0u; sx < SUPER_SAMPLES; sx++) {
+    for (var sy = 0u; sy < SUPER_SAMPLES; sy++) {
       let offset = vec2f(
-        (f32(sx) + 0.5) / SUPER_SAMPLES,
-        (f32(sy) + 0.5) / SUPER_SAMPLES,
+        (f32(sx) + 0.5) * ONE_OVER_SUPER_SAMPLES,
+        (f32(sy) + 0.5) * ONE_OVER_SUPER_SAMPLES,
       );
-      
-      for (var ss = 0u; ss < SUB_SAMPLES; ss++) {
-        construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
-        
-        var sub_acc = vec3f(1., 1., 1.);
-        var shape_ctx: ${ShapeContext};
-        shape_ctx.ray_distance = 0.;
 
-        for (var refl = 0u; refl < MAX_REFL; refl++) {
-          shape_ctx.ray_dir = ray_dir;
-          march(ray_pos, ray_dir, &shape_ctx, &march_result);
-
-          sub_acc *= march_result.material.albedo;
-          // sub_acc *= march_result.normal;
-
-          if (march_result.material.emissive) {
-            break;
-          }
-
-          // Reflecting: 𝑟=𝑑−2(𝑑⋅𝑛)𝑛
-          let dn2 = 2. * dot(ray_dir, march_result.normal);
-          let refl_dir = ray_dir - dn2 * march_result.normal;
-
-          ray_pos = march_result.position;
-          ray_dir = ${randOnHemisphere}(march_result.normal);
-          ray_dir = mix(refl_dir, ray_dir, march_result.material.roughness);
-          ray_dir = normalize(ray_dir);
-        }
-
-        // clipping
-        sub_acc = min(sub_acc, vec3f(1., 1., 1.));
-
-        acc += sub_acc;
-      }
+      acc += ${renderSubPixel}(vec2f(GlobalInvocationID.xy) + offset);
     }
   }
 
-  acc /= SUB_SAMPLES * SUPER_SAMPLES * SUPER_SAMPLES;
+  acc *= ONE_OVER_SUPER_SAMPLES * ONE_OVER_SUPER_SAMPLES;
 
   textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
 }
@@ -223,31 +264,34 @@ fn main_aux(
   @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
   @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
 ) {
-  let lid = LocalInvocationID.xy;
   var ray_pos = vec3f(0, 0, 0);
-  var ray_dir = vec3f(0, 0, 1);
-
-  var march_result: MarchResult;
-
   let offset = vec2f(
     0.5,
     0.5,
   );
-      
-  construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
+  var ray_dir = ${constructRayDir}(vec2f(GlobalInvocationID.xy) + offset);
 
+  // applying camera transform
+  ray_pos = (${$camera}.inv_view_matrix * vec4f(ray_pos, 1.)).xyz;
+  ray_dir = (${$camera}.inv_view_matrix * vec4f(ray_dir, 0.)).xyz;
+
+  var march_result: ${MarchResult};
   var shape_ctx: ${ShapeContext};
   shape_ctx.ray_distance = 0.;
+  shape_ctx.ray_dir = ray_dir;
 
-  march(ray_pos, ray_dir, &shape_ctx, &march_result);
+  march(ray_pos, &shape_ctx, &march_result);
 
-  let world_normal = march_result.normal;
+  let world_normal = world_normals(march_result.position, shape_ctx);
+  var material: ${Material};
+  ${worldMat}(march_result.position, shape_ctx, &material);
+
   let white = vec3f(1., 1., 1.);
-  let mat_color = min(march_result.material.albedo, white);
+  let mat_color = min(material.albedo, white);
 
   var albedo_luminance = convert_rgb_to_y(mat_color);
   var emission_luminance = 0.;
-  if (march_result.material.emissive) {
+  if (material.emissive) {
     emission_luminance = albedo_luminance;
   }
 
@@ -269,6 +313,7 @@ import { MAX_SPHERES } from '../../schema/scene';
 import { Camera, CameraStruct } from './camera';
 import { randOnHemisphere, setupRandomSeed } from '../wgslUtils/random';
 import worldSdf, {
+  FAR,
   Material,
   RenderTargetHeight,
   RenderTargetWidth,
@@ -277,6 +322,7 @@ import worldSdf, {
   surfaceDist,
   worldMat,
 } from './worldSdf';
+import { ONES_3F } from '../wgslUtils/mathConstants';
 
 export const SDFRenderer = (
   device: GPUDevice,
