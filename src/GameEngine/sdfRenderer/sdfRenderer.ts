@@ -10,12 +10,9 @@ import {
   dynamicArrayOf,
 } from 'wigsill';
 import { Parsed } from 'typed-binary';
-import { sdf } from './sdf';
 
 // parameters
 const OutputFormat = wgsl.param('output_format');
-const RenderTargetWidth = wgsl.param('render_target_width');
-const RenderTargetHeight = wgsl.param('render_target_height');
 const BlockSize = wgsl.param('block_size');
 const WhiteNoiseBufferSize = wgsl.param('white_noise_buffer_size');
 
@@ -53,31 +50,18 @@ const sceneMemoryArena = makeArena({
 });
 
 const MainShaderCode = wgsl.code`
-struct Material {
-  color: vec3f,
-  roughness: f32,
-  emissive: bool,
-}
 
 struct MarchResult {
   position: vec3f,
-  material: Material,
+  material: ${Material},
   normal: vec3f,
 }
 
-const WIDTH = ${RenderTargetWidth};
-const HEIGHT = ${RenderTargetHeight};
-const BLOCK_SIZE = ${BlockSize};
-const PI = 3.14159265359;
-const PI2 = 2. * PI;
 const MAX_STEPS = 100;
-const SURFACE_DIST = 0.0001;
 const SUPER_SAMPLES = 2;
-const SUB_SAMPLES = 32;
+const SUB_SAMPLES = 16;
 const MAX_REFL = 3u;
 const FAR = 100.;
-
-const VEC3F_MAX = vec3f(1., 1., 1.);
 
 @group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;
 
@@ -87,83 +71,16 @@ fn convert_rgb_to_y(rgb: vec3f) -> f32 {
 
 // -- SDF
 
-fn world_sdf(pos: vec3f) -> f32 {
-  var obj_idx = -1;
-  var min_dist = FAR;
-
-  let count = ${$sceneSpheres}.count;
-  for (var idx = 0u; idx < count; idx++) {
-    let sphere_xyzr = ${$sceneSpheres}.values[idx].xyzr;
-    let obj_dist = ${sdf.sphere}(pos, sphere_xyzr.xyz, sphere_xyzr.w);
-
-    min_dist = min(obj_dist, min_dist);
-  }
-
-  return min_dist;
-}
-
-fn sky_color(dir: vec3f) -> vec3f {
-  let t = dir.y / 2. + 0.5;
-  
-  let uv = floor(30.0 * dir.xy);
-  let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
-
-  return mix(
-    vec3f(0.1, 0.15, 0.5),
-    vec3f(0.7, 0.9, 1),
-    t,
-  ) * mix(1., 0., c);
-}
-
-fn world_material(pos: vec3f, out: ptr<function, Material>) {
-  var obj_idx = -1;
-  var min_dist = FAR;
-
-  for (var idx = 0u; idx < ${$sceneSpheres}.count; idx++) {
-    let sphere_xyzr = ${$sceneSpheres}.values[idx].xyzr;
-    let obj_dist = ${sdf.sphere}(pos, sphere_xyzr.xyz, sphere_xyzr.w);
-
-    if (obj_dist < min_dist) {
-      min_dist = obj_dist;
-      obj_idx = i32(idx);
-    }
-  }
-
-  if (obj_idx == -1) { // sky
-    let dir = normalize(pos);
-    (*out).emissive = true;
-    (*out).color = sky_color(dir);
-  }
-  else {
-    let mat_idx = ${$sceneSpheres}.values[obj_idx].material_idx;
-
-    if (mat_idx == 0) {
-      (*out).emissive = false;
-      (*out).roughness = 0.3;
-      (*out).color = vec3f(1, 0.9, 0.8);
-    }
-    else if (mat_idx == 1) {
-      (*out).emissive = false;
-      (*out).roughness = 1.;
-      (*out).color = vec3f(0.5, 0.7, 1);
-    }
-    else if (mat_idx == 2) {
-      (*out).emissive = true;
-      (*out).color = vec3f(0.5, 1, 0.7) * 10;
-    }
-  }
-}
-
-fn world_normals(point: vec3f) -> vec3f {
-  let epsilon = SURFACE_DIST * 0.1; // arbitrary - should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
+fn world_normals(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
+  let epsilon = ${surfaceDist}(ctx) * 0.1; // arbitrary - should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
   let offX = vec3f(point.x + epsilon, point.y, point.z);
   let offY = vec3f(point.x, point.y + epsilon, point.z);
   let offZ = vec3f(point.x, point.y, point.z + epsilon);
   
-  let centerDistance = world_sdf(point);
-  let xDistance = world_sdf(offX);
-  let yDistance = world_sdf(offY);
-  let zDistance = world_sdf(offZ);
+  let centerDistance = ${worldSdf}(point);
+  let xDistance = ${worldSdf}(offX);
+  let yDistance = ${worldSdf}(offY);
+  let zDistance = ${worldSdf}(offZ);
 
   return normalize(vec3f(
     (xDistance - centerDistance),
@@ -172,14 +89,9 @@ fn world_normals(point: vec3f) -> vec3f {
   ) / epsilon);
 }
 
-struct RayHitInfo {
-  start: f32,
-  end: f32,
-}
-
 fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<function, vec3f>) {
   var dir = vec4f(
-    (coord / vec2f(WIDTH, HEIGHT)) * 2. - 1.,
+    (coord / vec2f(${RenderTargetWidth}, ${RenderTargetHeight})) * 2. - 1.,
     1.,
     0.
   );
@@ -195,7 +107,7 @@ fn construct_ray(coord: vec2f, out_pos: ptr<function, vec3f>, out_dir: ptr<funct
   *out_dir = normalize((inv_view_matrix * dir).xyz);
 }
 
-fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
+fn march(ray_pos: vec3f, ray_dir: vec3f, ctx: ptr<function, ${ShapeContext}>, out: ptr<function, MarchResult>) {
   var pos = ray_pos;
   var prev_dist = -1.;
   var min_dist = FAR;
@@ -205,7 +117,7 @@ fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
 
   for (var step = 0u; step <= MAX_STEPS; step++) {
     pos = ray_pos + ray_dir * progress;
-    min_dist = world_sdf(pos);
+    min_dist = ${worldSdf}(pos);
 
     // Inside volume?
     if (min_dist <= 0. && prev_dist > 0.) {
@@ -213,13 +125,14 @@ fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
       break;
     }
 
-    if (min_dist < SURFACE_DIST && min_dist < prev_dist) {
+    if (min_dist < ${surfaceDist}(*ctx) && min_dist < prev_dist) {
       // No need to check more objects.
       break;
     }
 
     // march forward safely
     progress += min_dist;
+    (*ctx).ray_distance += min_dist;
 
     prev_dist = min_dist;
   }
@@ -227,19 +140,19 @@ fn march(ray_pos: vec3f, ray_dir: vec3f, out: ptr<function, MarchResult>) {
   (*out).position = pos;
 
   // Not near surface or distance rising?
-  if (min_dist > SURFACE_DIST * 2. || min_dist > prev_dist)
+  if (min_dist > ${surfaceDist}(*ctx) * 2. || min_dist > prev_dist)
   {
     // Sky
-    (*out).material.color = sky_color(ray_dir);
+    (*out).material.albedo = ${skyColor}(ray_dir);
     (*out).material.emissive = true;
     (*out).normal = -ray_dir;
     return;
   }
 
-  var material: Material;
-  world_material(pos, &material);
+  var material: ${Material};
+  ${worldMat}(pos, *ctx, &material);
   (*out).material = material;
-  (*out).normal = world_normals(pos);
+  (*out).normal = world_normals(pos, *ctx);
 }
 
 @compute @workgroup_size(${BlockSize}, ${BlockSize}, 1)
@@ -268,11 +181,14 @@ fn main_frag(
         construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
         
         var sub_acc = vec3f(1., 1., 1.);
+        var shape_ctx: ${ShapeContext};
+        shape_ctx.ray_distance = 0.;
 
         for (var refl = 0u; refl < MAX_REFL; refl++) {
-          march(ray_pos, ray_dir, &march_result);
+          shape_ctx.ray_dir = ray_dir;
+          march(ray_pos, ray_dir, &shape_ctx, &march_result);
 
-          sub_acc *= march_result.material.color;
+          sub_acc *= march_result.material.albedo;
           // sub_acc *= march_result.normal;
 
           if (march_result.material.emissive) {
@@ -320,11 +236,14 @@ fn main_aux(
       
   construct_ray(vec2f(GlobalInvocationID.xy) + offset, &ray_pos, &ray_dir);
 
-  march(ray_pos, ray_dir, &march_result);
+  var shape_ctx: ${ShapeContext};
+  shape_ctx.ray_distance = 0.;
+
+  march(ray_pos, ray_dir, &shape_ctx, &march_result);
 
   let world_normal = march_result.normal;
   let white = vec3f(1., 1., 1.);
-  let mat_color = min(march_result.material.color, white);
+  let mat_color = min(march_result.material.albedo, white);
 
   var albedo_luminance = convert_rgb_to_y(mat_color);
   var emission_luminance = 0.;
@@ -349,6 +268,15 @@ import { GBuffer } from '../../gBuffer';
 import { MAX_SPHERES } from '../../schema/scene';
 import { Camera, CameraStruct } from './camera';
 import { randOnHemisphere, setupRandomSeed } from '../wgslUtils/random';
+import worldSdf, {
+  Material,
+  RenderTargetHeight,
+  RenderTargetWidth,
+  ShapeContext,
+  skyColor,
+  surfaceDist,
+  worldMat,
+} from './worldSdf';
 
 export const SDFRenderer = (
   device: GPUDevice,

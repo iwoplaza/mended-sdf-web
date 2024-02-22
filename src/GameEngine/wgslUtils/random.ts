@@ -1,14 +1,9 @@
-import { wgsl } from 'wigsill';
-import { TWO_PI } from './mathConstants';
+import { vec2f, wgsl } from 'wigsill';
+import { PI, TWO_PI } from './mathConstants';
 
-const randSeed = wgsl.identifier('rand_seed');
-const randSeedDefinition = wgsl`
-var<private> ${randSeed}: vec2f;
-`;
+const randSeed = wgsl.var(vec2f).alias('rand_seed');
 
 export const setupRandomSeed = wgsl.fn('setup_random_seed')`(coord: vec2f) {
-  ${wgsl.require(randSeedDefinition)}
-
   ${randSeed} = coord;
 }`;
 
@@ -42,7 +37,7 @@ export const randInCircle = wgsl.fn('rand_in_circle')`() -> vec2f {
 
 export const randOnSphere = wgsl.fn('rand_on_sphere')`() -> vec3f {
   let z = 2. * ${rand01}() - 1.;
-  let theta = ${TWO_PI} * ${rand01}() - PI;
+  let theta = ${TWO_PI} * ${rand01}() - ${PI};
   let x = sin(theta) * sqrt(1. - z*z);
   let y = cos(theta) * sqrt(1. - z*z);
   return vec3f(x, y, z);
