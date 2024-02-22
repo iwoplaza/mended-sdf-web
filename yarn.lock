@@ -2399,10 +2399,10 @@ which@^2.0.1:
   dependencies:
     isexe "^2.0.0"
 
-wigsill@^0.0.0-alpha.2:
-  version "0.0.0-alpha.2"
-  resolved "https://registry.yarnpkg.com/wigsill/-/wigsill-0.0.0-alpha.2.tgz#7d84d2ea37c953fd08887f25279e24090ccd2dd4"
-  integrity sha512-n/M/OwjnLzSGzGmnmmg9sp5d1Ti9BTDgY8MrOXX9SR0BAitg1QpCVcewW9OBbIjenq3WaIBbXXetUK4cFOlDsw==
+wigsill@^0.0.0-alpha.3:
+  version "0.0.0-alpha.3"
+  resolved "https://registry.yarnpkg.com/wigsill/-/wigsill-0.0.0-alpha.3.tgz#89fa02e57f70160e1e9130a8a473be1c9ee13229"
+  integrity sha512-L++yr1swzX95TI249qEmBRMc0e1Ia+XZ4ntyMHqROxp+7lOdA/CmWan9VzSBvSVPXgJZbj8fxIei2k4bEOgnIQ==
   dependencies:
     typed-binary "^4.0.0-alpha.3"
 
