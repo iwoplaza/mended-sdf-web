@@ -2,6 +2,7 @@ import {
   makeArena,
   ProgramBuilder,
   WGSLRuntime,
+  ptr,
   wgsl,
   u32,
   f32,
@@ -74,6 +75,55 @@ const MarchResult = struct({
   position: vec3f,
 });
 
+const march = wgsl.fun([vec3f, u32, ptr(ShapeContext), ptr(MarchResult)])(
+  (pos, limit, ctx, out) => wgsl`
+  var pos = ${pos};
+  var prev_dist = -1.;
+  var min_dist = ${FAR};
+
+  var step = 0u;
+  var progress = 0.;
+
+  for (; step <= ${limit}; step++) {
+    pos = ${pos} + (*${ctx}).ray_dir * progress;
+    min_dist = ${worldSdf}(pos);
+
+    // Inside volume?
+    if (min_dist <= 0.) {
+      // No need to check more objects.
+      break;
+    }
+
+    if (min_dist < ${surfaceDist}(*${ctx}) && min_dist < prev_dist) {
+      // No need to check more objects.
+      break;
+    }
+
+    // march forward safely
+    progress += min_dist;
+    (*${ctx}).ray_distance += min_dist;
+
+    if (progress > ${FAR}) {
+      // Stop checking.
+      break;
+    }
+
+    prev_dist = min_dist;
+  }
+
+  (*${out}).position = pos;
+
+  // Not near surface or distance rising?
+  if (min_dist > ${surfaceDist}(*${ctx}) * 2. || min_dist > prev_dist) {
+    // Sky
+    (*${out}).steps = MAX_STEPS + 1u;
+    return;
+  }
+
+  (*${out}).steps = step;
+`,
+);
+
 const renderSubPixel = wgsl.fn('render_sub_pixel')`(coord: vec2f) -> vec3f {
   var start_dir = ${constructRayDir}(coord);
 
@@ -96,7 +146,7 @@ const renderSubPixel = wgsl.fn('render_sub_pixel')`(coord: vec2f) -> vec3f {
     for (var refl = 0u; refl < MAX_REFL; refl++) {
       var march_result: ${MarchResult};
       shape_ctx.ray_dir = ray_dir;
-      march(ray_pos, &shape_ctx, &march_result);
+      ${march('ray_pos', 'MAX_STEPS', '&shape_ctx', '&march_result')};
 
       if (march_result.steps >= MAX_STEPS) {
         emissive_color = ${skyColor}(ray_dir);
@@ -185,52 +235,7 @@ fn world_normals(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
   ) / epsilon);
 }
 
-fn march(ray_pos: vec3f, ctx: ptr<function, ${ShapeContext}>, out: ptr<function, ${MarchResult}>) {
-  var pos = ray_pos;
-  var prev_dist = -1.;
-  var min_dist = ${FAR};
 
-  var step = 0u;
-  var progress = 0.;
-
-  for (; step <= MAX_STEPS; step++) {
-    pos = ray_pos + (*ctx).ray_dir * progress;
-    min_dist = ${worldSdf}(pos);
-
-    // Inside volume?
-    if (min_dist <= 0.) {
-      // No need to check more objects.
-      break;
-    }
-
-    if (min_dist < ${surfaceDist}(*ctx) && min_dist < prev_dist) {
-      // No need to check more objects.
-      break;
-    }
-
-    // march forward safely
-    progress += min_dist;
-    (*ctx).ray_distance += min_dist;
-
-    if (progress > ${FAR}) {
-      // Stop checking.
-      break;
-    }
-
-    prev_dist = min_dist;
-  }
-
-  (*out).position = pos;
-
-  // Not near surface or distance rising?
-  if (min_dist > ${surfaceDist}(*ctx) * 2. || min_dist > prev_dist) {
-    // Sky
-    (*out).steps = MAX_STEPS + 1u;
-    return;
-  }
-
-  (*out).steps = step;
-}
 
 @compute @workgroup_size(${BlockSize}, ${BlockSize}, 1)
 fn main_frag(
@@ -280,7 +285,7 @@ fn main_aux(
   shape_ctx.ray_distance = 0.;
   shape_ctx.ray_dir = ray_dir;
 
-  march(ray_pos, &shape_ctx, &march_result);
+  ${march('ray_pos', 'MAX_STEPS', '&shape_ctx', '&march_result')};
 
   let world_normal = world_normals(march_result.position, shape_ctx);
   var material: ${Material};
