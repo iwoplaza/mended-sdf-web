@@ -153,7 +153,7 @@ const renderSubPixel = wgsl.fn('render_sub_pixel')`(coord: vec2f) -> vec3f {
 
 const MainShaderCode = wgsl.code`
 
-const MAX_STEPS = 100;
+const MAX_STEPS = 500;
 const SUPER_SAMPLES = 4;
 const ONE_OVER_SUPER_SAMPLES = 1. / SUPER_SAMPLES;
 const SUB_SAMPLES = 32;

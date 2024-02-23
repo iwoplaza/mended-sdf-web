@@ -19,19 +19,23 @@ export const surfaceDist = wgsl.fn(
   'surface_dist',
 )`(ctx: ${ShapeContext}) -> f32 {
   let dist_from_camera = ctx.ray_distance;
-  return dist_from_camera / ${RenderTargetHeight} * 0.05;
+  return dist_from_camera / ${RenderTargetHeight} * 0.1;
 }`;
 
-const obj_left_blob = wgsl.fn('obj_left_blob')`(pos: vec3f) -> f32 {
+const objLeftBlob = wgsl.fn('obj_left_blob')`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(-0.3, 0., -2.), 0.2);
 }`;
 
-const obj_center_blob = wgsl.fn('obj_center_blob')`(pos: vec3f) -> f32 {
+const objCenterBlob = wgsl.fn('obj_center_blob')`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(0., 0.7, -2.), 0.2);
 }`;
 
-const obj_right_blob = wgsl.fn('obj_right_blob')`(pos: vec3f) -> f32 {
+const objRightBlob = wgsl.fn('obj_right_blob')`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(0.4, 0., -2.), 0.4);
+}`;
+
+const objFloor = wgsl.fn('obj_floor')`(pos: vec3f) -> f32 {
+  return pos.y + 0.3;
 }`;
 
 export const FAR = wgsl.constant('100.');
@@ -39,9 +43,10 @@ export const FAR = wgsl.constant('100.');
 export const worldSdf = wgsl.fn('world_sdf')`(pos: vec3f) -> f32 {
   var min_dist = ${FAR};
 
-  min_dist = min(min_dist, ${obj_left_blob}(pos));
-  min_dist = min(min_dist, ${obj_center_blob}(pos));
-  min_dist = min(min_dist, ${obj_right_blob}(pos));
+  min_dist = min(min_dist, ${objLeftBlob}(pos));
+  min_dist = min(min_dist, ${objCenterBlob}(pos));
+  min_dist = min(min_dist, ${objRightBlob}(pos));
+  min_dist = min(min_dist, ${objFloor}(pos));
 
   return min_dist;
 }`;
@@ -65,9 +70,10 @@ export const worldMat = wgsl.fn(
   'world_mat',
 )`(pos: vec3f, ctx: ${ShapeContext}, out: ptr<function, ${Material}>) {
   let sd = ${surfaceDist}(ctx);
-  let d_left_blob = ${obj_left_blob}(pos);
-  let d_center_blob = ${obj_center_blob}(pos);
-  let d_right_blob = ${obj_right_blob}(pos);
+  let d_left_blob = ${objLeftBlob}(pos);
+  let d_center_blob = ${objCenterBlob}(pos);
+  let d_right_blob = ${objRightBlob}(pos);
+  let d_floor_blob = ${objFloor}(pos);
 
   // defaults
   (*out).emissive = false;
@@ -86,6 +92,10 @@ export const worldMat = wgsl.fn(
   else if (d_right_blob <= sd) {
     (*out).albedo = vec3f(0.5, 0.5, 0.6) * 0.9;
     (*out).roughness = 0.3;
+  }
+  else if (d_floor_blob <= sd) {
+    (*out).albedo = vec3f(0.5, 0.5, 0.6) * 0.3;
+    (*out).roughness = 0.9;
   }
   else {
     // (*out).albedo = vec3f(0.5, 0.5, 0.2);
