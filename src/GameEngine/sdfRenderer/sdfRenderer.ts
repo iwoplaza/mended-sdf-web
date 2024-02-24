@@ -214,7 +214,7 @@ const MainShaderCode = wgsl.code`
 const MAX_STEPS = 500;
 const SUPER_SAMPLES = 2;
 const ONE_OVER_SUPER_SAMPLES = 1. / SUPER_SAMPLES;
-const SUB_SAMPLES = 64;
+const SUB_SAMPLES = 16;
 const MAX_REFL = 3u;
 
 @group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;
@@ -250,7 +250,7 @@ fn main_frag(
   @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
 ) {
 
-  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) + ${$random_seed_primer});
+  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) * 10. + ${$random_seed_primer} * 1234.);
 
   var acc = vec3f(0., 0., 0.);
   for (var sx = 0u; sx < SUPER_SAMPLES; sx++) {
@@ -301,7 +301,15 @@ fn main_aux(
     '&march_result',
   )};
 
-  let world_normal = world_normals(march_result.position, shape_ctx);
+  var world_normal: vec3f;
+
+  if (march_result.steps >= MAX_STEPS) {
+    world_normal = -ray_dir;
+  }
+  else {
+    world_normal = world_normals(march_result.position, shape_ctx);
+  }
+
   var material: ${Material};
   ${worldMat}(march_result.position, shape_ctx, &material);
 
@@ -314,11 +322,10 @@ fn main_aux(
     emission_luminance = albedo_luminance;
   }
 
-  // TODO: Transform this normal into view-space
-  let view_normal = vec2f(world_normal.x, world_normal.y);
+  let view_normal = ${$camera}.view_matrix * vec4f(world_normal, 0);
 
   let aux = vec4(
-    view_normal,
+    view_normal.xy,
     albedo_luminance,
     emission_luminance
   );

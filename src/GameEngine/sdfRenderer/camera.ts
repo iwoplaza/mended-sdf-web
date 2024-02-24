@@ -2,6 +2,7 @@ import { mat4, vec3 } from 'wgpu-matrix';
 import { WGSLMemory, WGSLRuntime, mat4f, struct } from 'wigsill';
 
 export const CameraStruct = struct({
+  view_matrix: mat4f,
   inv_view_matrix: mat4f,
 }).alias('CameraStruct');
 
@@ -20,12 +21,19 @@ export class Camera {
 
     const invViewMatrix = mat4.identity();
 
+    // transforming the camera
+
     mat4.translate(invViewMatrix, vec3.fromValues(0, 0, -2), invViewMatrix);
     mat4.rotateY(invViewMatrix, rad, invViewMatrix);
     mat4.translate(invViewMatrix, vec3.fromValues(0, 0, 2), invViewMatrix);
 
+    // calculating the 'regular' view matrix
+
+    const viewMatrix = mat4.inverse(invViewMatrix);
+
     // Writing to buffer
     this.memory.write(runtime, {
+      view_matrix: [...viewMatrix.values()],
       inv_view_matrix: [...invViewMatrix.values()],
     });
   }

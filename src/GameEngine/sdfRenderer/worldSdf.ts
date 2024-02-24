@@ -21,7 +21,7 @@ export const Material = struct({
 export const surfaceDist = wgsl.fun([ShapeContext], f32)(
   (ctx) => wgsl`
     let dist_from_camera = ${ctx}.ray_distance;
-    return dist_from_camera / ${RenderTargetHeight} * 0.1;
+    return dist_from_camera / ${RenderTargetHeight} * 0.01;
 `);
 
 // prettier-ignore
@@ -36,7 +36,7 @@ const objCenterBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
 
 // prettier-ignore
 const objRightBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
-  return ${sdf.sphere(pos, 'vec3(0.4, 0., -2.)', 0.4)};
+  return ${sdf.sphere(pos, wgsl`vec3(0.4, 0.2 + sin(${$time} * 0.001) * 0.1, -2.)`, 0.4)};
 `);
 
 // prettier-ignore
@@ -102,12 +102,12 @@ export const worldMat = wgsl.fn(
   }
   else if (d_center_blob <= sd) {
     // test light
-    (*out).albedo = vec3f(1., 1., 1.) * 20.;
+    (*out).albedo = vec3f(1., 1., 1.) * 1.;
     (*out).emissive = true;
   }
   else if (d_right_blob <= sd) {
     (*out).albedo = vec3f(0.5, 0.5, 0.6) * 0.9;
-    (*out).roughness = 0.3;
+    (*out).roughness = 0.1;
   }
   else if (d_floor_blob <= sd) {
     ${matFloor('pos', 'out')};
