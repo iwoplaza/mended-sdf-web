@@ -15,28 +15,32 @@ export const Material = struct({
   emissive: bool,
 });
 
-export const surfaceDist = wgsl.fn(
-  'surface_dist',
-)`(ctx: ${ShapeContext}) -> f32 {
-  let dist_from_camera = ctx.ray_distance;
-  return dist_from_camera / ${RenderTargetHeight} * 0.1;
-}`;
+// prettier-ignore
+export const surfaceDist = wgsl.fun([ShapeContext], f32)(
+  (ctx) => wgsl`
+    let dist_from_camera = ${ctx}.ray_distance;
+    return dist_from_camera / ${RenderTargetHeight} * 0.1;
+`);
 
-const objLeftBlob = wgsl.fn('obj_left_blob')`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(-0.3, 0., -2.), 0.2);
-}`;
+// prettier-ignore
+const objLeftBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
+  return ${sdf.sphere(pos, 'vec3(-0.3, 0., -2.)', 0.2)};
+`);
 
-const objCenterBlob = wgsl.fn('obj_center_blob')`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(0., 0.7, -2.), 0.2);
-}`;
+// prettier-ignore
+const objCenterBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
+  return ${sdf.sphere(pos, 'vec3(0., 0.7, -2.)', 0.2)};
+`);
 
-const objRightBlob = wgsl.fn('obj_right_blob')`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(0.4, 0., -2.), 0.4);
-}`;
+// prettier-ignore
+const objRightBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
+  return ${sdf.sphere(pos, 'vec3(0.4, 0., -2.)', 0.4)};
+`);
 
-const objFloor = wgsl.fn('obj_floor')`(pos: vec3f) -> f32 {
-  return pos.y + 0.3;
-}`;
+// prettier-ignore
+const objFloor = wgsl.fun([vec3f], f32)((pos) => wgsl`
+  return ${pos}.y + 0.3;
+`);
 
 export const FAR = wgsl.constant('100.');
 
@@ -104,11 +108,3 @@ export const worldMat = wgsl.fn(
 }`;
 
 export default worldSdf;
-
-// let count = ${$sceneSpheres}.count;
-// for (var idx = 0u; idx < count; idx++) {
-//   let sphere_xyzr = ${$sceneSpheres}.values[idx].xyzr;
-//   let obj_dist = ${sdf.sphere}(pos, sphere_xyzr.xyz, sphere_xyzr.w);
-
-//   min_dist = min(obj_dist, min_dist);
-// }

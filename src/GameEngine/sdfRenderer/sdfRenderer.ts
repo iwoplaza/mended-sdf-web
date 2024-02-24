@@ -2,7 +2,6 @@ import {
   makeArena,
   ProgramBuilder,
   WGSLRuntime,
-  ptr,
   wgsl,
   u32,
   f32,
@@ -10,6 +9,7 @@ import {
   struct,
   dynamicArrayOf,
   vec3f,
+  vec2f,
 } from 'wigsill';
 import type { Parsed } from 'typed-binary';
 
@@ -51,9 +51,13 @@ const sceneMemoryArena = makeArena({
   memoryEntries: [$time, $camera, $sceneSpheres],
 });
 
-const constructRayDir = wgsl.fn('construct_ray_dir')`(coord: vec2f) -> vec3f {
+const constructRayDir = wgsl.fun(
+  [vec2f],
+  vec3f,
+)(
+  (coord) => wgsl`
   let viewport_size = vec2f(${RenderTargetWidth}, ${RenderTargetHeight});
-  var view_coords = (coord - viewport_size / 2.) / ${RenderTargetHeight};
+  var view_coords = (${coord} - viewport_size / 2.) / ${RenderTargetHeight};
 
   var view_ray_dir = vec3f(
     view_coords,
@@ -63,69 +67,22 @@ const constructRayDir = wgsl.fn('construct_ray_dir')`(coord: vec2f) -> vec3f {
   view_ray_dir = normalize(view_ray_dir);
 
   return view_ray_dir;
-}`;
+`,
+);
 
 const Reflection = struct({
   color: vec3f,
   roughness: f32,
 });
 
-const MarchResult = struct({
-  steps: u32,
-  position: vec3f,
-});
+const marchWithSurfaceDist = march(surfaceDist);
 
-const march = wgsl.fun([vec3f, u32, ptr(ShapeContext), ptr(MarchResult)])(
-  (pos, limit, ctx, out) => wgsl`
-  var pos = ${pos};
-  var prev_dist = -1.;
-  var min_dist = ${FAR};
-
-  var step = 0u;
-  var progress = 0.;
-
-  for (; step <= ${limit}; step++) {
-    pos = ${pos} + (*${ctx}).ray_dir * progress;
-    min_dist = ${worldSdf}(pos);
-
-    // Inside volume?
-    if (min_dist <= 0.) {
-      // No need to check more objects.
-      break;
-    }
-
-    if (min_dist < ${surfaceDist}(*${ctx}) && min_dist < prev_dist) {
-      // No need to check more objects.
-      break;
-    }
-
-    // march forward safely
-    progress += min_dist;
-    (*${ctx}).ray_distance += min_dist;
-
-    if (progress > ${FAR}) {
-      // Stop checking.
-      break;
-    }
-
-    prev_dist = min_dist;
-  }
-
-  (*${out}).position = pos;
-
-  // Not near surface or distance rising?
-  if (min_dist > ${surfaceDist}(*${ctx}) * 2. || min_dist > prev_dist) {
-    // Sky
-    (*${out}).steps = MAX_STEPS + 1u;
-    return;
-  }
-
-  (*${out}).steps = step;
-`,
-);
-
-const renderSubPixel = wgsl.fn('render_sub_pixel')`(coord: vec2f) -> vec3f {
-  var start_dir = ${constructRayDir}(coord);
+const renderSubPixel = wgsl.fun(
+  [vec2f],
+  vec3f,
+)(
+  (coord) => wgsl`
+  var start_dir = ${constructRayDir(coord)};
 
   // applying camera transform
   var start_pos = (${$camera}.inv_view_matrix * vec4f(0., 0., 0., 1.)).xyz;
@@ -146,7 +103,12 @@ const renderSubPixel = wgsl.fn('render_sub_pixel')`(coord: vec2f) -> vec3f {
     for (var refl = 0u; refl < MAX_REFL; refl++) {
       var march_result: ${MarchResult};
       shape_ctx.ray_dir = ray_dir;
-      ${march('ray_pos', 'MAX_STEPS', '&shape_ctx', '&march_result')};
+      ${marchWithSurfaceDist(
+        'ray_pos',
+        'MAX_STEPS',
+        '&shape_ctx',
+        '&march_result',
+      )};
 
       if (march_result.steps >= MAX_STEPS) {
         emissive_color = ${skyColor}(ray_dir);
@@ -199,7 +161,8 @@ const renderSubPixel = wgsl.fn('render_sub_pixel')`(coord: vec2f) -> vec3f {
   acc = min(acc, ${ONES_3F});
 
   return acc;
-}`;
+`,
+);
 
 const MainShaderCode = wgsl.code`
 
@@ -255,7 +218,7 @@ fn main_frag(
         (f32(sy) + 0.5) * ONE_OVER_SUPER_SAMPLES,
       );
 
-      acc += ${renderSubPixel}(vec2f(GlobalInvocationID.xy) + offset);
+      acc += ${renderSubPixel('vec2f(GlobalInvocationID.xy) + offset')};
     }
   }
 
@@ -274,7 +237,7 @@ fn main_aux(
     0.5,
     0.5,
   );
-  var ray_dir = ${constructRayDir}(vec2f(GlobalInvocationID.xy) + offset);
+  var ray_dir = ${constructRayDir('vec2f(GlobalInvocationID.xy) + offset')};
 
   // applying camera transform
   ray_pos = (${$camera}.inv_view_matrix * vec4f(ray_pos, 1.)).xyz;
@@ -285,7 +248,12 @@ fn main_aux(
   shape_ctx.ray_distance = 0.;
   shape_ctx.ray_dir = ray_dir;
 
-  ${march('ray_pos', 'MAX_STEPS', '&shape_ctx', '&march_result')};
+  ${marchWithSurfaceDist(
+    'ray_pos',
+    'MAX_STEPS',
+    '&shape_ctx',
+    '&march_result',
+  )};
 
   let world_normal = world_normals(march_result.position, shape_ctx);
   var material: ${Material};
@@ -318,7 +286,6 @@ import { MAX_SPHERES } from '../../schema/scene';
 import { Camera, CameraStruct } from './camera';
 import { randOnHemisphere, setupRandomSeed } from '../wgslUtils/random';
 import worldSdf, {
-  FAR,
   Material,
   RenderTargetHeight,
   RenderTargetWidth,
@@ -328,6 +295,7 @@ import worldSdf, {
   worldMat,
 } from './worldSdf';
 import { ONES_3F } from '../wgslUtils/mathConstants';
+import { MarchResult, march } from './marchSdf';
 
 export const SDFRenderer = (
   device: GPUDevice,

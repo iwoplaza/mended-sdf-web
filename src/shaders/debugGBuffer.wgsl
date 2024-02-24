@@ -53,7 +53,7 @@ fn main_frag(
 
   let c = coord_f.xy / vec2<f32>(uniforms.canvasSize);
   // let c = coord.xy / vec2<f32>(512, 512);
-  if (c.x < 0.25) {
+  if (c.x < 0.33) {
     // NORMALS
 
     result = vec4(
@@ -63,7 +63,7 @@ fn main_frag(
       1.0,
     );
   }
-  else if (c.x < 0.5) {
+  else if (c.x < 0.66) {
     // ALBEDO_LUMI
 
     let albedo = aux.z;
@@ -74,6 +74,7 @@ fn main_frag(
       1.0,
     );
   }
+  /*
   else if (c.x < 0.75) {
     // EMISSION_LUMI
 
@@ -84,7 +85,7 @@ fn main_frag(
       emission,
       1.0,
     );
-  }
+  }*/
   else {
     // BLURRED
 

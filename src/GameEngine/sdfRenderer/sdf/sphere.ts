@@ -1,13 +1,13 @@
-import { wgsl } from 'wigsill';
+import { f32, vec2f, vec3f, wgsl } from 'wigsill';
 
-export const sphere = wgsl.fn(
-  'sdf_sphere',
-)`(pos: vec3f, o: vec3f, r: f32) -> f32 {
-  return distance(pos, o) - r;
-}`;
+// prettier-ignore
+export const sphere = wgsl.fun([vec3f, vec3f, f32], f32)(
+  (pos, origin, radius) => wgsl`
+    return distance(${pos}, ${origin}) - ${radius};
+`);
 
-export const circle = wgsl.fn(
-  'sdf_circle',
-)`(pos: vec2f, o: vec2f, r: f32) -> f32 {
-  return distance(pos, o) - r;
-}`;
+// prettier-ignore
+export const circle = wgsl.fun([vec2f, vec2f, f32], f32)(
+  (pos, origin, radius) => wgsl`
+    return distance(${pos}, ${origin}) - ${radius};
+`);
