@@ -10,6 +10,7 @@ import {
   dynamicArrayOf,
   vec3f,
   vec2f,
+  ptr,
 } from 'wigsill';
 import type { Parsed } from 'typed-binary';
 
@@ -24,7 +25,6 @@ const SphereStruct = struct({
   material_idx: u32,
 }).alias('SphereStruct');
 
-const $time = wgsl.memory(f32).alias('Time info');
 const $sceneSpheres = wgsl
   .memory(dynamicArrayOf(SphereStruct, MAX_SPHERES).alias('SphereArray'))
   .alias('Scene spheres');
@@ -48,7 +48,7 @@ const sceneMemoryArena = makeArena({
   usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.UNIFORM,
   bufferBindingType: 'uniform',
   minSize: 2144,
-  memoryEntries: [$time, $camera, $sceneSpheres],
+  memoryEntries: [$time, $random_seed_primer, $camera, $sceneSpheres],
 });
 
 const constructRayDir = wgsl.fun(
@@ -77,6 +77,27 @@ const Reflection = struct({
 
 const marchWithSurfaceDist = march(surfaceDist);
 
+// prettier-ignore
+/**
+ * Reflecting: 𝑟=𝑑−2(𝑑⋅𝑛)𝑛
+ * @param ray_dir
+ * @param normal
+ * @param mat_roughness
+ */
+const reflect = wgsl.fun([vec3f, vec3f, f32, ptr(f32)], vec3f)((ray_dir, normal, mat_roughness, out_roughness) => wgsl`
+  let slope = dot(${ray_dir}, ${normal});
+  let dn2 = 2. * slope;
+  let refl_dir = ${ray_dir} - dn2 * ${normal};
+
+  let fresnel = 1. - pow(1. + slope, 16.);
+  let roughness = ${mat_roughness} * fresnel;
+  *${out_roughness} = roughness;
+
+  var ray_dir = ${randOnHemisphere(normal)};
+  ray_dir = mix(refl_dir, ray_dir, roughness);
+  return normalize(ray_dir);
+`);
+
 const renderSubPixel = wgsl.fun(
   [vec2f],
   vec3f,
@@ -84,77 +105,101 @@ const renderSubPixel = wgsl.fun(
   (coord) => wgsl`
   var start_dir = ${constructRayDir(coord)};
 
-  // applying camera transform
+  /// applying camera transform
+
   var start_pos = (${$camera}.inv_view_matrix * vec4f(0., 0., 0., 1.)).xyz;
   start_dir = (${$camera}.inv_view_matrix * vec4f(start_dir, 0.)).xyz;
 
+  /// doing the first march before each sub-sample, since the first march result is the same for all of them
+
+  var init_shape_ctx: ${ShapeContext};
+  init_shape_ctx.ray_dir = start_dir;
+  init_shape_ctx.ray_distance = 0.;
+  var init_march_result: ${MarchResult};
+
+  ${marchWithSurfaceDist(
+    'start_pos',
+    'MAX_STEPS',
+    '&init_shape_ctx',
+    '&init_march_result',
+  )};
+
+  if (init_march_result.steps >= MAX_STEPS) {
+    return min(${skyColor}(start_dir), ${ONES_3F});
+  }
+
+  var normal = world_normals(init_march_result.position, init_shape_ctx);
+
+  var init_material: ${Material};
+  ${worldMat}(init_march_result.position, init_shape_ctx, &init_material);
+
+  if (init_material.emissive) {
+    return min(init_material.albedo, ${ONES_3F});
+  }
+
+  var reflections: array<${Reflection}, MAX_REFL>;
+  
   var acc = vec3f(0., 0., 0.);
   for (var sub = 0u; sub < SUB_SAMPLES; sub++) {
-    var ray_pos = start_pos;
+    var ray_pos = init_march_result.position;
     var ray_dir = start_dir;
+    var material: ${Material} = init_material;
 
-    var reflections: array<${Reflection}, MAX_REFL>;
-    var refl_count = 0u;
     var emissive_color = vec3f(0., 0., 0.);
+    var refl_count = 0u;
 
     var shape_ctx: ${ShapeContext};
-    shape_ctx.ray_distance = 0.;
+    shape_ctx.ray_distance = init_shape_ctx.ray_distance;
 
     for (var refl = 0u; refl < MAX_REFL; refl++) {
-      var march_result: ${MarchResult};
+      var roughness: f32 = 0.;
+      ray_dir = ${reflect(
+        'ray_dir',
+        'normal',
+        'material.roughness',
+        '&roughness',
+      )};;
+      reflections[refl_count].color = material.albedo;
+      reflections[refl_count].roughness = roughness;
+      refl_count++;
+
       shape_ctx.ray_dir = ray_dir;
+      var march_result: ${MarchResult};
       ${marchWithSurfaceDist(
         'ray_pos',
         'MAX_STEPS',
         '&shape_ctx',
         '&march_result',
       )};
+      ray_pos = march_result.position;
 
       if (march_result.steps >= MAX_STEPS) {
         emissive_color = ${skyColor}(ray_dir);
         break;
       }
 
-      let normal = world_normals(march_result.position, shape_ctx);
+      normal = world_normals(ray_pos, shape_ctx);
 
-      var material: ${Material};
-      ${worldMat}(march_result.position, shape_ctx, &material);
+      ${worldMat}(ray_pos, shape_ctx, &material);
 
       if (material.emissive) {
         emissive_color = material.albedo;
         break;
       }
-
-      // Reflecting: 𝑟=𝑑−2(𝑑⋅𝑛)𝑛
-      let view_slope = dot(ray_dir, normal);
-      let dn2 = 2. * view_slope;
-      let refl_dir = ray_dir - dn2 * normal;
-
-      let fresnel = 1. - pow(1. + view_slope, 16.);
-      let roughness = material.roughness * fresnel;
-
-      ray_pos = march_result.position;
-      ray_dir = ${randOnHemisphere}(normal);
-      ray_dir = mix(refl_dir, ray_dir, roughness);
-      ray_dir = normalize(ray_dir);
-
-      reflections[refl_count].color = material.albedo;
-      reflections[refl_count].roughness = roughness;
-      refl_count++;
     }
 
     var sub_acc = emissive_color;
     for (var i = i32(refl_count) - 1; i >= 0; i--) {
       let mat_color = reflections[i].color;
       let reflectivity = 1. - reflections[i].roughness;
-      // sub_acc *= reflections[i].color;
-      sub_acc *= mix(mat_color, ${ONES_3F}, reflectivity);
-      sub_acc += mat_color * (reflectivity);
+
+      sub_acc *= mix(mat_color, ${ONES_3F}, max(0., min(reflectivity, 1.))); // absorb the ray color based on reflectivity
     }
 
     acc += sub_acc;
   }
 
+  // averaging
   acc /= f32(SUB_SAMPLES);
 
   // clipping
@@ -167,9 +212,9 @@ const renderSubPixel = wgsl.fun(
 const MainShaderCode = wgsl.code`
 
 const MAX_STEPS = 500;
-const SUPER_SAMPLES = 4;
+const SUPER_SAMPLES = 2;
 const ONE_OVER_SUPER_SAMPLES = 1. / SUPER_SAMPLES;
-const SUB_SAMPLES = 32;
+const SUB_SAMPLES = 64;
 const MAX_REFL = 3u;
 
 @group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;
@@ -202,13 +247,10 @@ fn world_normals(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
 
 @compute @workgroup_size(${BlockSize}, ${BlockSize}, 1)
 fn main_frag(
-  @builtin(local_invocation_id) LocalInvocationID: vec3<u32>,
   @builtin(global_invocation_id) GlobalInvocationID: vec3<u32>,
 ) {
-  let lid = LocalInvocationID.xy;
-  let parallel_idx = LocalInvocationID.y * ${BlockSize} + LocalInvocationID.x;
 
-  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) + ${$time} * 0.312);
+  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) + ${$random_seed_primer});
 
   var acc = vec3f(0., 0., 0.);
   for (var sx = 0u; sx < SUPER_SAMPLES; sx++) {
@@ -223,6 +265,10 @@ fn main_frag(
   }
 
   acc *= ONE_OVER_SUPER_SAMPLES * ONE_OVER_SUPER_SAMPLES;
+
+  // applying gamma correction
+  let gamma = 2.2;
+  acc = pow(acc, vec3(1.0 / gamma));
 
   textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
 }
@@ -277,6 +323,8 @@ fn main_aux(
     emission_luminance
   );
 
+  // TODO: maybe apply gamma correction to the albedo luminance parameter??
+
   textureStore(output_tex, GlobalInvocationID.xy, aux);
 }
 `;
@@ -286,6 +334,8 @@ import { MAX_SPHERES } from '../../schema/scene';
 import { Camera, CameraStruct } from './camera';
 import { randOnHemisphere, setupRandomSeed } from '../wgslUtils/random';
 import worldSdf, {
+  $random_seed_primer,
+  $time,
   Material,
   RenderTargetHeight,
   RenderTargetWidth,
@@ -434,7 +484,8 @@ export const SDFRenderer = (
 
   return {
     perform(commandEncoder: GPUCommandEncoder) {
-      $time.write(runtime, Date.now() % 1000);
+      $time.write(runtime, Date.now() % 100000);
+      $random_seed_primer.write(runtime, Math.random());
       camera.update(runtime);
 
       const mainPass = commandEncoder.beginComputePass();

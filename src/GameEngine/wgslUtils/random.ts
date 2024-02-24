@@ -1,4 +1,4 @@
-import { vec2f, wgsl } from 'wigsill';
+import { vec2f, vec3f, wgsl } from 'wigsill';
 import { PI, TWO_PI } from './mathConstants';
 
 const randSeed = wgsl.var(vec2f).alias('rand_seed');
@@ -43,11 +43,11 @@ export const randOnSphere = wgsl.fn('rand_on_sphere')`() -> vec3f {
   return vec3f(x, y, z);
 }`;
 
-export const randOnHemisphere = wgsl.fn(
-  'rand_on_hemisphere',
-)`(normal: vec3f) -> vec3f {
-  let value = ${randOnSphere}();
-  let alignment = dot(normal, value);
+// prettier-ignore
+export const randOnHemisphere = wgsl.fun([vec3f], vec3f)(
+  (normal) => wgsl`
+    let value = ${randOnSphere}();
+    let alignment = dot(${normal}, value);
 
-  return sign(alignment) * value;
-}`;
+    return sign(alignment) * value;
+`);

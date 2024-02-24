@@ -1,8 +1,10 @@
-import { f32, bool, struct, vec3f, wgsl } from 'wigsill';
+import { f32, bool, struct, vec3f, wgsl, ptr } from 'wigsill';
 import { sdf } from './sdf';
 
 export const RenderTargetWidth = wgsl.param('render_target_width');
 export const RenderTargetHeight = wgsl.param('render_target_height');
+export const $time = wgsl.memory(f32).alias('Time info');
+export const $random_seed_primer = wgsl.memory(f32).alias('Random seed primer');
 
 export const ShapeContext = struct({
   ray_distance: f32,
@@ -24,12 +26,12 @@ export const surfaceDist = wgsl.fun([ShapeContext], f32)(
 
 // prettier-ignore
 const objLeftBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
-  return ${sdf.sphere(pos, 'vec3(-0.3, 0., -2.)', 0.2)};
+  return ${sdf.sphere(pos, 'vec3(-0.3, -0.2, -2.)', 0.2)};
 `);
 
 // prettier-ignore
 const objCenterBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
-  return ${sdf.sphere(pos, 'vec3(0., 0.7, -2.)', 0.2)};
+  return ${sdf.sphere(pos, wgsl`vec3(0., 0.7, -2.)`, 0.2)};
 `);
 
 // prettier-ignore
@@ -41,6 +43,16 @@ const objRightBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
 const objFloor = wgsl.fun([vec3f], f32)((pos) => wgsl`
   return ${pos}.y + 0.3;
 `);
+
+const matFloor = wgsl.fun([vec3f, ptr(Material)])(
+  (pos, mtr) => wgsl`
+  let uv = floor(5.0 * ${pos}.xz);
+  let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
+
+  (*${mtr}).albedo = mix(vec3(1., 1., 1.), vec3(0., 0., 0.), c);
+  (*${mtr}).roughness = 0.9;
+`,
+);
 
 export const FAR = wgsl.constant('100.');
 
@@ -58,16 +70,16 @@ export const worldSdf = wgsl.fn('world_sdf')`(pos: vec3f) -> f32 {
 // MATERIALS
 
 export const skyColor = wgsl.fn('sky_color')`(dir: vec3f) -> vec3f {
-  let t = dir.y / 2. + 0.5;
+  let t = pow(min(abs(dir.y) * 4, 1.), 0.4);
   
   let uv = floor(30.0 * dir.xy);
   let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
 
   return mix(
-    vec3f(0.1, 0.15, 0.5),
-    vec3f(0.7, 0.9, 1),
+    vec3f(0.7, 0.7, 0.75), // horizon
+    vec3f(0.35, 0.4, 0.6),
     t,
-  ) * mix(1., 0., c);
+  );
 }`;
 
 export const worldMat = wgsl.fn(
@@ -98,8 +110,7 @@ export const worldMat = wgsl.fn(
     (*out).roughness = 0.3;
   }
   else if (d_floor_blob <= sd) {
-    (*out).albedo = vec3f(0.5, 0.5, 0.6) * 0.3;
-    (*out).roughness = 0.9;
+    ${matFloor('pos', 'out')};
   }
   else {
     // (*out).albedo = vec3f(0.5, 0.5, 0.2);
