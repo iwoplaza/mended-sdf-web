@@ -298,33 +298,17 @@ const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
       const depth4Size = runtime.readPlum(cBuffer.depth4SizePlum);
       const depth2Size = runtime.readPlum(cBuffer.depth2SizePlum);
 
-      runtime.readPlum(cone16Program).execute({
+      const opts = ([x, y]: [number, number]) => ({
         workgroups: [
-          Math.ceil(depth16Size[0] / BlockSize),
-          Math.ceil(depth16Size[1] / BlockSize),
-        ],
+          Math.ceil(x / BlockSize),
+          Math.ceil(y / BlockSize),
+        ] as const,
       });
 
-      runtime.readPlum(cone8Program).execute({
-        workgroups: [
-          Math.ceil(depth8Size[0] / BlockSize),
-          Math.ceil(depth8Size[1] / BlockSize),
-        ],
-      });
-
-      runtime.readPlum(cone4Program).execute({
-        workgroups: [
-          Math.ceil(depth4Size[0] / BlockSize),
-          Math.ceil(depth4Size[1] / BlockSize),
-        ],
-      });
-
-      runtime.readPlum(cone2Program).execute({
-        workgroups: [
-          Math.ceil(depth2Size[0] / BlockSize),
-          Math.ceil(depth2Size[1] / BlockSize),
-        ],
-      });
+      runtime.readPlum(cone16Program).execute(opts(depth16Size));
+      runtime.readPlum(cone8Program).execute(opts(depth8Size));
+      runtime.readPlum(cone4Program).execute(opts(depth4Size));
+      runtime.readPlum(cone2Program).execute(opts(depth2Size));
     },
   };
 };
