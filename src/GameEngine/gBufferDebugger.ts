@@ -13,11 +13,6 @@ const canvasSizeBuffer = wgsl
   .$allowUniform();
 const canvasSizeUniform = canvasSizeBuffer.asUniform();
 
-const externalDeclarations = [
-  wgsl`@group(0) @binding(0) var blurredTex: texture_2d<f32>;`,
-  wgsl`@group(0) @binding(1) var auxTex: texture_2d<f32>;`,
-];
-
 const mainFragFn = wgsl.fn()`(coord_f: vec4f) -> vec4f {
   let coord = vec2<i32>(floor(coord_f.xy));
 
@@ -105,19 +100,12 @@ export function makeGBufferDebugger(
       {
         binding: 0,
         visibility: GPUShaderStage.FRAGMENT,
-        buffer: {
-          type: 'uniform',
-        },
-      },
-      {
-        binding: 1,
-        visibility: GPUShaderStage.FRAGMENT,
         texture: {
           sampleType: 'unfilterable-float',
         },
       },
       {
-        binding: 2,
+        binding: 1,
         visibility: GPUShaderStage.FRAGMENT,
         texture: {
           sampleType: 'unfilterable-float',
@@ -150,6 +138,9 @@ export function makeGBufferDebugger(
     fragment: {
       args: ['@builtin(position) coord_f: vec4f'],
       code: wgsl`
+        ${wgsl.declare(wgsl`@group(0) @binding(0) var blurredTex: texture_2d<f32>;`)}
+        ${wgsl.declare(wgsl`@group(0) @binding(1) var auxTex: texture_2d<f32>;`)}
+
         return ${mainFragFn}(coord_f);
       `,
       output: wgsl`@location(0) vec4f`,
@@ -160,7 +151,6 @@ export function makeGBufferDebugger(
       ],
     },
     primitive: { topology: 'triangle-list' },
-    externalDeclarations,
     externalLayouts: [externalBindGroupLayout],
   });
 
