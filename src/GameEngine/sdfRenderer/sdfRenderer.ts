@@ -34,34 +34,21 @@ const ONE_OVER_SUPER_SAMPLES = 1 / SUPER_SAMPLES;
 const SUB_SAMPLES = 16;
 const MAX_REFL = 3;
 
-// TEST
-// const nameMap = new WeakMap<any, string>();
-// function nameFor(value: unknown): string {
-//   if (nameMap.has(value)) {
-//     return nameMap.get(value)!;
-//   }
-
-//   const name = `#${Math.random()}`;
-//   nameMap.set(value, name);
-//   return name;
-// }
-// TEST
-
 const Reflection = struct({
   color: vec3f,
   roughness: f32,
-});
+}).$name('reflection');
 
-const marchWithSurfaceDist = march(surfaceDist).$name('march_with_surface_dist');
+const marchWithSurfaceDist = march(surfaceDist).$name(
+  'march_with_surface_dist',
+);
 
-// biome-ignore format:
 /**
  * Reflecting: 𝑟=𝑑−2(𝑑⋅𝑛)𝑛
  * @param ray_dir
  * @param normal
  * @param mat_roughness
  */
-// const reflect = wgsl.fun([vec3f, vec3f, f32, ptr(f32)], vec3f)(
 const reflect = wgsl.fn()`(ray_dir: vec3f, normal: vec3f, mat_roughness: f32, out_roughness: ptr<function, f32>) -> vec3f {
   let slope = dot(ray_dir, normal);
   let dn2 = 2. * slope;
@@ -331,12 +318,12 @@ export const SDFRenderer = async (
     code: wgsl`
       ${mainComputeFn}(LocalInvocationID, GlobalInvocationID);
     `
-    // filling slots
-    .with(OutputFormat, 'rgba8unorm')
-    .with(RenderTargetWidth, mainPassSize[0])
-    .with(RenderTargetHeight, mainPassSize[1])
-    .with(BlockSize, blockDim)
-    .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
+      // filling slots
+      .with(OutputFormat, 'rgba8unorm')
+      .with(RenderTargetWidth, mainPassSize[0])
+      .with(RenderTargetHeight, mainPassSize[1])
+      .with(BlockSize, blockDim)
+      .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
     // ---
     externalLayouts: [mainBindGroupLayout],
     externalDeclarations: externalDeclarations('rgba8unorm'),
@@ -352,12 +339,12 @@ export const SDFRenderer = async (
     code: wgsl`
       ${auxComputeFn}(LocalInvocationID, GlobalInvocationID);
     `
-    // filling slots
-    .with(OutputFormat, 'rgba16float')
-    .with(RenderTargetWidth, gBuffer.size[0])
-    .with(RenderTargetHeight, gBuffer.size[1])
-    .with(BlockSize, blockDim)
-    .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
+      // filling slots
+      .with(OutputFormat, 'rgba16float')
+      .with(RenderTargetWidth, gBuffer.size[0])
+      .with(RenderTargetHeight, gBuffer.size[1])
+      .with(BlockSize, blockDim)
+      .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
     // ---
     externalLayouts: [auxBindGroupLayout],
     externalDeclarations: externalDeclarations('rgba16float'),
