@@ -1,11 +1,12 @@
-import { vec2f, vec3f, wgsl } from 'wigsill';
+import wgsl from 'typegpu';
+import { vec2f } from 'typegpu/data';
 import { PI, TWO_PI } from './mathConstants';
 
-const randSeed = wgsl.var(vec2f).alias('rand_seed');
+const randSeed = wgsl.var(vec2f).$name('rand_seed');
 
-export const setupRandomSeed = wgsl.fn('setup_random_seed')`(coord: vec2f) {
+export const setupRandomSeed = wgsl.fn()`(coord: vec2f) {
   ${randSeed} = coord;
-}`;
+}`.$name('setup_random_seed');
 
 /**
  * Yoinked from https://www.cg.tuwien.ac.at/research/publications/2023/PETER-2023-PSW/PETER-2023-PSW-.pdf
@@ -43,11 +44,9 @@ export const randOnSphere = wgsl.fn('rand_on_sphere')`() -> vec3f {
   return vec3f(x, y, z);
 }`;
 
-// prettier-ignore
-export const randOnHemisphere = wgsl.fun([vec3f], vec3f)(
-  (normal) => wgsl`
-    let value = ${randOnSphere}();
-    let alignment = dot(${normal}, value);
+export const randOnHemisphere = wgsl.fn()`(normal: vec3f) -> vec3f {
+  let value = ${randOnSphere}();
+  let alignment = dot(normal, value);
 
-    return sign(alignment) * value;
-`);
+  return sign(alignment) * value;
+}`;

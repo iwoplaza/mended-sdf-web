@@ -1,4 +1,4 @@
-import { arrayOf, struct, u32, vec3f } from 'wigsill';
+import { arrayOf, struct, u32, vec3f } from 'typegpu';
 import type { Parsed } from 'typed-binary';
 
 export enum MarchDomainKind {

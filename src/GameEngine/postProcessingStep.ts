@@ -1,75 +1,46 @@
-import { BufferWriter } from 'typed-binary';
+import { vec2f } from 'typegpu/data';
+import { wgsl, type TypeGpuRuntime } from 'typegpu';
 
-import { GBuffer } from '../gBuffer';
-import { SceneSchema } from '../schema/scene';
-import fullScreenQuadWGSL from '../shaders/fullScreenQuad.wgsl?raw';
-import postProcessWGSL from '../shaders/postProcess.wgsl?raw';
+import type { GBuffer } from '../gBuffer';
+import { fullScreenQuadVertexShader } from '../shaders/fullScreenQuad';
 
 type Options = {
-  device: GPUDevice;
+  runtime: TypeGpuRuntime;
   context: GPUCanvasContext;
   presentationFormat: GPUTextureFormat;
   gBuffer: GBuffer;
 };
 
+const canvasSizeBuffer = wgsl
+  .buffer(vec2f)
+  .$name('canvas_size')
+  .$allowUniform();
+
+const externalDeclarations = [
+  wgsl`@group(0) @binding(0) var sourceTexture: texture_2d<f32>;`,
+];
+
+const mainFragFn = wgsl.fn()`(coord_f: vec4f) -> vec4f {
+  var coord = vec2u(floor(coord_f.xy));
+
+  let color = textureLoad(
+    sourceTexture,
+    coord,
+    0
+  );
+
+  // no post-processing for now
+
+  return vec4f(color.rgb, 1.0);
+}
+`;
+
 export const PostProcessingStep = ({
-  device,
+  runtime,
   context,
   presentationFormat,
   gBuffer,
 }: Options) => {
-  //
-  // SCENE
-  //
-
-  const scene = {
-    canvasSize: gBuffer.size,
-  };
-
-  const sceneUniformBuffer = device.createBuffer({
-    size: 2 * 4 /* vec2<i32> */,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  // Eagerly filling the buffer
-  const sceneUniformData = new ArrayBuffer(SceneSchema.measure(scene).size);
-  const bufferWriter = new BufferWriter(sceneUniformData);
-  SceneSchema.write(bufferWriter, scene);
-
-  device.queue.writeBuffer(
-    sceneUniformBuffer,
-    0,
-    sceneUniformData,
-    0,
-    sceneUniformData.byteLength,
-  );
-
-  //
-
-  const fullScreenQuadShader = device.createShaderModule({
-    label: 'Full Screen Quad Shader',
-    code: fullScreenQuadWGSL,
-  });
-
-  const postProcessShader = device.createShaderModule({
-    label: 'Post Process Shader',
-    code: postProcessWGSL,
-  });
-
-  const pipeline = device.createRenderPipeline({
-    label: 'Post Processing Pipeline',
-    layout: 'auto',
-    vertex: {
-      module: fullScreenQuadShader,
-      entryPoint: 'main',
-    },
-    fragment: {
-      module: postProcessShader,
-      entryPoint: 'main',
-      targets: [{ format: presentationFormat }],
-    },
-  });
-
   const passColorAttachment: GPURenderPassColorAttachment = {
     // view is acquired and set in render loop.
     view: undefined as unknown as GPUTextureView,
@@ -79,13 +50,36 @@ export const PostProcessingStep = ({
     storeOp: 'store',
   };
 
-  const passDescriptor: GPURenderPassDescriptor = {
-    colorAttachments: [passColorAttachment],
-  };
+  const externalBindGroupLayout = runtime.device.createBindGroupLayout({
+    label: 'Post Processing - Bind Group Layout',
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: {},
+      },
+    ],
+  });
 
-  const bindGroup = device.createBindGroup({
+  const pipeline = runtime.makeRenderPipeline({
+    label: 'Pos Processing Pipeline',
+    vertex: fullScreenQuadVertexShader,
+    fragment: {
+      args: ['@builtin(position) coord_f: vec4f'],
+      code: wgsl`
+        return ${mainFragFn}(coord_f);
+      `,
+      output: '@location(0) vec4f',
+      target: [{ format: presentationFormat }],
+    },
+    primitive: { topology: 'triangle-list' },
+    externalDeclarations,
+    externalLayouts: [externalBindGroupLayout],
+  });
+
+  const externalBindGroup = runtime.device.createBindGroup({
     label: 'Post Processing - Bind Group',
-    layout: pipeline.getBindGroupLayout(0),
+    layout: externalBindGroupLayout,
     entries: [
       {
         binding: 0,
@@ -94,17 +88,19 @@ export const PostProcessingStep = ({
     ],
   });
 
+  runtime.writeBuffer(canvasSizeBuffer, gBuffer.size);
+
   return {
-    perform(commandEncoder: GPUCommandEncoder) {
+    perform() {
       // Updating color attachment
       const textureView = context.getCurrentTexture().createView();
       passColorAttachment.view = textureView;
 
-      const pass = commandEncoder.beginRenderPass(passDescriptor);
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.draw(6);
-      pass.end();
+      pipeline.execute({
+        vertexCount: 6,
+        colorAttachments: [passColorAttachment],
+        externalBindGroups: [externalBindGroup],
+      });
     },
   };
 };

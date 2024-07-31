@@ -1,4 +1,4 @@
-import { wgsl } from 'wigsill';
+import { wgsl } from 'typegpu';
 import { clamp01 } from './macros';
 
 export const lineSegment2 = wgsl.fn(

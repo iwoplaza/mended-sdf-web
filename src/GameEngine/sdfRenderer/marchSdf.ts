@@ -1,5 +1,8 @@
-import { WGSLFunction, f32, ptr, struct, u32, vec3f, wgsl } from 'wigsill';
+import wgsl, { type WgslFn } from 'typegpu';
+import { struct, u32, vec3f } from 'typegpu/data';
 import worldSdf, { FAR, ShapeContext } from './worldSdf';
+
+export const MAX_STEPS = 500;
 
 export const MarchResult = struct({
   steps: u32,
@@ -7,19 +10,18 @@ export const MarchResult = struct({
 });
 
 export const march = (
-  distThresholdFn: WGSLFunction<[typeof ShapeContext], typeof f32>,
+  distThresholdFn: WgslFn,
 ) =>
-  wgsl.fun([vec3f, u32, ptr(ShapeContext), ptr(MarchResult)])(
-    (pos, limit, ctx, out) => wgsl`
-    var pos = ${pos};
+  wgsl.fn()`(ctx: ptr<function, ${ShapeContext}>, limit: u32, out: ptr<function, ${MarchResult}>) {
+    var pos = (*ctx).ray_pos;
     var prev_dist = -1.;
     var min_dist = ${FAR};
   
     var step = 0u;
     var progress = 0.;
   
-    for (; step <= ${limit}; step++) {
-      pos = ${pos} + (*${ctx}).ray_dir * progress;
+    for (; step <= limit; step++) {
+      pos = (*ctx).ray_pos + (*ctx).ray_dir * progress;
       min_dist = ${worldSdf}(pos);
   
       // Inside volume?
@@ -28,16 +30,14 @@ export const march = (
         break;
       }
   
-      if (min_dist < ${distThresholdFn(
-        wgsl`*${ctx}`,
-      )} && min_dist < prev_dist) {
+      if (min_dist < ${distThresholdFn}(*ctx) && min_dist < prev_dist) {
         // No need to check more objects.
         break;
       }
   
       // march forward safely
       progress += min_dist;
-      (*${ctx}).ray_distance += min_dist;
+      (*ctx).ray_distance += min_dist;
   
       if (progress > ${FAR}) {
         // Stop checking.
@@ -47,17 +47,14 @@ export const march = (
       prev_dist = min_dist;
     }
   
-    (*${out}).position = pos;
+    (*out).position = pos;
   
     // Not near surface or distance rising?
-    if (min_dist > ${distThresholdFn(
-      wgsl`*${ctx}`,
-    )} * 2. || min_dist > prev_dist) {
+    if (min_dist > ${distThresholdFn}(*ctx) * 2. || min_dist > prev_dist) {
       // Sky
-      (*${out}).steps = MAX_STEPS + 1u;
+      (*out).steps = ${MAX_STEPS} + 1u;
       return;
     }
   
-    (*${out}).steps = step;
-  `,
-  );
+    (*out).steps = step;
+  }`;

@@ -1,4 +1,4 @@
-import { wgsl } from 'wigsill';
+import { wgsl } from 'typegpu';
 
 export const extrude = wgsl.fn(
   'op_extrude',

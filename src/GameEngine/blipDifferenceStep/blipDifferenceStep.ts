@@ -1,43 +1,79 @@
-import fullScreenQuadWGSL from '../../shaders/fullScreenQuad.wgsl?raw';
-import blipDifferenceWGSL from './blipDifference.wgsl?raw';
+import { wgsl, type TypeGpuRuntime } from 'typegpu';
+import { fullScreenQuadVertexShader } from '../../shaders/fullScreenQuad';
 
 type Options = {
-  device: GPUDevice;
+  runtime: TypeGpuRuntime;
   context: GPUCanvasContext;
   presentationFormat: GPUTextureFormat;
   textures: [GPUTextureView, GPUTextureView];
 };
 
+const externalDeclarations = [
+  '@group(0) @binding(0) var texture_a: texture_2d<f32>;',
+  '@group(0) @binding(1) var texture_b: texture_2d<f32>;',
+];
+
+const fragFn = wgsl.fn()`(coord_f: vec4f) -> vec4f {
+  var coord = vec2u(floor(coord_f.xy));
+
+  let color_a = textureLoad(
+    texture_a,
+    coord,
+    0
+  );
+
+  let color_b = textureLoad(
+    texture_b,
+    coord,
+    0
+  );
+
+  return vec4f(abs(color_a.rgb - color_b.rgb), 1.0);
+}`;
+
 export const BlipDifferenceStep = ({
-  device,
+  runtime,
   context,
   presentationFormat,
   textures,
 }: Options) => {
-  const LABEL_BASE = `Blip Difference`;
+  const device = runtime.device;
+  const LABEL_BASE = 'Blip Difference';
 
-  const fullScreenQuadShader = device.createShaderModule({
-    label: `${LABEL_BASE} - Full Screen Quad Shader`,
-    code: fullScreenQuadWGSL,
+  const externalBindGroupLayout = device.createBindGroupLayout({
+    label: `${LABEL_BASE} - External Bind Group Layout`,
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: {
+          viewDimension: '2d',
+        },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: {
+          viewDimension: '2d',
+        },
+      },
+    ],
   });
 
-  const blipDifferenceShader = device.createShaderModule({
-    label: `${LABEL_BASE} - Shader`,
-    code: blipDifferenceWGSL,
-  });
-
-  const pipeline = device.createRenderPipeline({
+  const pipeline = runtime.makeRenderPipeline({
     label: `${LABEL_BASE} - Pipeline`,
-    layout: 'auto',
-    vertex: {
-      module: fullScreenQuadShader,
-      entryPoint: 'main',
-    },
+    vertex: fullScreenQuadVertexShader,
     fragment: {
-      module: blipDifferenceShader,
-      entryPoint: 'main',
-      targets: [{ format: presentationFormat }],
+      args: ['@builtin(position) coord_f: vec4f'],
+      code: wgsl`
+        return ${fragFn}(coord_f);
+      `,
+      output: '@location(0) vec4f',
+      target: [{ format: presentationFormat }],
     },
+    primitive: { topology: 'triangle-list' },
+    externalDeclarations,
+    externalLayouts: [externalBindGroupLayout],
   });
 
   const passColorAttachment: GPURenderPassColorAttachment = {
@@ -49,13 +85,9 @@ export const BlipDifferenceStep = ({
     storeOp: 'store',
   };
 
-  const passDescriptor: GPURenderPassDescriptor = {
-    colorAttachments: [passColorAttachment],
-  };
-
   const bindGroup = device.createBindGroup({
     label: `${LABEL_BASE} - Bind Group`,
-    layout: pipeline.getBindGroupLayout(0),
+    layout: externalBindGroupLayout,
     entries: [
       {
         binding: 0,
@@ -69,16 +101,16 @@ export const BlipDifferenceStep = ({
   });
 
   return {
-    perform(commandEncoder: GPUCommandEncoder) {
+    perform() {
       // Updating color attachment
       const textureView = context.getCurrentTexture().createView();
       passColorAttachment.view = textureView;
 
-      const pass = commandEncoder.beginRenderPass(passDescriptor);
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.draw(6);
-      pass.end();
+      pipeline.execute({
+        vertexCount: 6,
+        externalBindGroups: [bindGroup],
+        colorAttachments: [passColorAttachment],
+      });
     },
   };
 };

@@ -1,15 +1,22 @@
-import { f32, bool, struct, vec3f, wgsl, ptr } from 'wigsill';
+import wgsl from 'typegpu';
+import { f32, bool, struct, vec3f } from 'typegpu/data';
 import { sdf } from './sdf';
 
-export const RenderTargetWidth = wgsl.param('render_target_width');
-export const RenderTargetHeight = wgsl.param('render_target_height');
-export const $time = wgsl.memory(f32).alias('Time info');
-export const $random_seed_primer = wgsl.memory(f32).alias('Random seed primer');
+export const RenderTargetWidth = wgsl.slot().$name('render_target_width');
+export const RenderTargetHeight = wgsl.slot().$name('render_target_height');
+export const timeBuffer = wgsl.buffer(f32).$name('time').$allowUniform();
+export const timeUniform = timeBuffer.asUniform();
+export const randomSeedPrimerBuffer = wgsl
+  .buffer(f32)
+  .$name('random_seed_primer')
+  .$allowUniform();
+export const randomSeedPrimerUniform = randomSeedPrimerBuffer.asUniform().$name('random_seed_primer_uniform');
 
 export const ShapeContext = struct({
-  ray_distance: f32,
+  ray_pos: vec3f,
   ray_dir: vec3f,
-}).alias('Shape Context type');
+  ray_distance: f32,
+}).$name('shape_context');
 
 export const Material = struct({
   albedo: vec3f,
@@ -17,42 +24,35 @@ export const Material = struct({
   emissive: bool,
 });
 
-// prettier-ignore
-export const surfaceDist = wgsl.fun([ShapeContext], f32)(
-  (ctx) => wgsl`
-    let dist_from_camera = ${ctx}.ray_distance;
-    return dist_from_camera / ${RenderTargetHeight} * 0.01;
-`);
+export const surfaceDist = wgsl.fn()`(ctx: ${ShapeContext}) -> f32 {
+  let dist_from_camera = ctx.ray_distance;
+  return dist_from_camera / ${RenderTargetHeight} * 0.01;
+}`;
 
-// prettier-ignore
-const objLeftBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
-  return ${sdf.sphere(pos, 'vec3(-0.3, -0.2, -2.)', 0.2)};
-`);
+const objLeftBlob = wgsl.fn()`(pos: vec3f) -> f32 {
+  return ${sdf.sphere}(pos, vec3(-0.3, -0.2, -2.), 0.2);
+}`.$name('obj_left_blob');
 
-// prettier-ignore
-const objCenterBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
-  return ${sdf.sphere(pos, wgsl`vec3(0., 0.7, -2.)`, 0.2)};
-`);
+const objCenterBlob = wgsl.fn()`(pos: vec3f) -> f32 {
+  return ${sdf.sphere}(pos, vec3(0., 0.7, -2.), 0.2);
+}`.$name('obj_center_blob');
 
-// prettier-ignore
-const objRightBlob = wgsl.fun([vec3f], f32)((pos) => wgsl`
-  return ${sdf.sphere(pos, wgsl`vec3(0.4, 0.2 + sin(${$time} * 0.001) * 0.1, -2.)`, 0.4)};
-`);
+const objRightBlob = wgsl.fn()`(pos: vec3f) -> f32 {
+  return ${sdf.sphere}(pos, vec3(0.4, 0.2 + sin(${timeUniform} * 0.001) * 0.1, -2.), 0.4);
+}`;
 
-// prettier-ignore
-const objFloor = wgsl.fun([vec3f], f32)((pos) => wgsl`
-  return ${pos}.y + 0.3;
-`);
+const objFloor = wgsl.fn()`(pos: vec3f) -> f32 {
+  return pos.y + 0.3;
+}`;
 
-const matFloor = wgsl.fun([vec3f, ptr(Material)])(
-  (pos, mtr) => wgsl`
-  let uv = floor(5.0 * ${pos}.xz);
+// biome-ignore format:
+const matFloor = wgsl.fn()`(pos: vec3f, mtr: ptr<function, ${Material}>) {
+  let uv = floor(5.0 * pos.xz);
   let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
-
-  (*${mtr}).albedo = mix(vec3(1., 1., 1.), vec3(0., 0., 0.), c);
-  (*${mtr}).roughness = 0.9;
-`,
-);
+  
+  (*mtr).albedo = mix(vec3(1., 1., 1.), vec3(0., 0., 0.), c);
+  (*mtr).roughness = 0.9;
+}`.$name('mat_floor');
 
 export const FAR = wgsl.constant('100.');
 
@@ -110,7 +110,7 @@ export const worldMat = wgsl.fn(
     (*out).roughness = 0.1;
   }
   else if (d_floor_blob <= sd) {
-    ${matFloor('pos', 'out')};
+    ${matFloor}(pos, out);
   }
   else {
     // (*out).albedo = vec3f(0.5, 0.5, 0.2);

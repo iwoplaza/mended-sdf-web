@@ -1,3 +1,5 @@
+import type { TypeGpuRuntime } from 'typegpu';
+
 export class GBuffer {
   quarterTexture: GPUTexture; // used by Mender
   upscaledTexture: GPUTexture; // used by Mender
@@ -25,10 +27,13 @@ export class GBuffer {
 
   quarterSize: [number, number];
 
-  constructor(device: GPUDevice, private _size: [number, number]) {
+  constructor(
+    runtime: TypeGpuRuntime,
+    private _size: [number, number],
+  ) {
     this.quarterSize = [Math.floor(_size[0] / 4), Math.floor(_size[1] / 4)];
 
-    this.quarterTexture = device.createTexture({
+    this.quarterTexture = runtime.device.createTexture({
       size: this.quarterSize,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
@@ -37,14 +42,14 @@ export class GBuffer {
       format: 'rgba8unorm',
     });
 
-    this.upscaledTexture = device.createTexture({
+    this.upscaledTexture = runtime.device.createTexture({
       size: this.size,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       format: 'rgba8unorm',
     });
 
-    this.rawRenderTexture = device.createTexture({
+    this.rawRenderTexture = runtime.device.createTexture({
       size: this.size,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |
@@ -53,7 +58,7 @@ export class GBuffer {
       format: 'rgba8unorm',
     });
 
-    this.auxTexture = device.createTexture({
+    this.auxTexture = runtime.device.createTexture({
       size: _size,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT |

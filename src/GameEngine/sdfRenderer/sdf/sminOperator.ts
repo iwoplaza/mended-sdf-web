@@ -1,4 +1,4 @@
-import { wgsl } from 'wigsill';
+import { wgsl } from 'typegpu';
 
 /**
  * polynomial smooth min 2

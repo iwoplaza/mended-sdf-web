@@ -1,4 +1,4 @@
-import { wgsl } from 'wigsill';
+import { wgsl } from 'typegpu';
 
 /**
  * Inflates the passed in field, and makes it rounded as

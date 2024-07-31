@@ -1,4 +1,4 @@
-import { wgsl } from 'wigsill';
+import { wgsl } from 'typegpu';
 
 export const PI = wgsl.constant(3.14159265359);
 export const TWO_PI = wgsl.constant(6.28318530718);

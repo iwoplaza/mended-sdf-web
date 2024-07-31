@@ -1,13 +1,9 @@
-import { f32, vec2f, vec3f, wgsl } from 'wigsill';
+import wgsl from 'typegpu';
 
-// prettier-ignore
-export const sphere = wgsl.fun([vec3f, vec3f, f32], f32)(
-  (pos, origin, radius) => wgsl`
-    return distance(${pos}, ${origin}) - ${radius};
-`);
+export const sphere = wgsl.fn()`(pos: vec3f, origin: vec3f, radius: f32) -> f32 {
+  return distance(pos, origin) - radius;
+}`;
 
-// prettier-ignore
-export const circle = wgsl.fun([vec2f, vec2f, f32], f32)(
-  (pos, origin, radius) => wgsl`
-    return distance(${pos}, ${origin}) - ${radius};
-`);
+export const circle = wgsl.fn()`(pos: vec2f, origin: vec2f, radius: f32) -> f32 {
+  return distance(pos, origin) - radius;
+}`;

@@ -1,15 +1,40 @@
 import { mat4, vec3 } from 'wgpu-matrix';
-import { WGSLMemory, WGSLRuntime, mat4f, struct } from 'wigsill';
+import wgsl, { type TypeGpuRuntime } from 'typegpu';
+import { mat4f, struct } from 'typegpu/data';
+import { RenderTargetHeight, RenderTargetWidth } from './worldSdf';
 
 export const CameraStruct = struct({
   view_matrix: mat4f,
   inv_view_matrix: mat4f,
-}).alias('CameraStruct');
+}).$name('CameraStruct');
+
+export const cameraBuffer = wgsl
+  .buffer(CameraStruct)
+  .$name('Main Camera')
+  .$allowUniform();
+
+export const cameraUniform = cameraBuffer.asUniform();
+
+export const constructRayPos = wgsl.fn()`() -> vec3f {
+  return (${cameraUniform}.inv_view_matrix * vec4(0., 0., 0., 1.)).xyz;
+}`.$name('construct_ray_pos');
+
+export const constructRayDir = wgsl.fn()`(coord: vec2f) -> vec3f {
+  let viewport_size = vec2f(${RenderTargetWidth}, ${RenderTargetHeight});
+  var view_coords = (coord - viewport_size / 2.) / ${RenderTargetHeight};
+
+  var view_ray_dir = vec3f(
+    view_coords,
+    -1.,
+  );
+  view_ray_dir.y *= -1.;
+  view_ray_dir = normalize(view_ray_dir);
+
+  return (${cameraUniform}.inv_view_matrix * vec4(view_ray_dir, 0.)).xyz;
+}`.$name('construct_ray_dir');
 
 export class Camera {
-  constructor(private readonly memory: WGSLMemory<typeof CameraStruct>) {}
-
-  update(runtime: WGSLRuntime) {
+  update(runtime: TypeGpuRuntime) {
     const origin = vec3.fromValues(0, 0, 1);
     const eyePosition = vec3.fromValues(0, 0, 0);
     // const upVector = vec3.fromValues(0, 1, 0);
@@ -32,7 +57,7 @@ export class Camera {
     const viewMatrix = mat4.inverse(invViewMatrix);
 
     // Writing to buffer
-    this.memory.write(runtime, {
+    runtime.writeBuffer(cameraBuffer, {
       view_matrix: [...viewMatrix.values()],
       inv_view_matrix: [...invViewMatrix.values()],
     });

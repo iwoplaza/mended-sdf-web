@@ -1,4 +1,4 @@
-import { wgsl } from 'wigsill';
+import { wgsl } from 'typegpu';
 
 export const repeatXYZ = wgsl.fn(
   'op_repeat_xyz',

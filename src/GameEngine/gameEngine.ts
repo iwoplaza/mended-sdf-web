@@ -2,21 +2,16 @@ import { store } from '../store';
 import { GBuffer } from '../gBuffer';
 import { MenderStep } from '../menderStep';
 import { displayModeAtom } from '../DebugOptions';
-import { GBufferDebugger } from './gBufferDebugger';
+import { makeGBufferDebugger } from './gBufferDebugger';
 // import { GBufferMeshRenderer } from './gBufferMeshRenderer';
 import { PostProcessingStep } from './postProcessingStep';
 import { ResampleStep } from './resampleStep/resampleCubicStep';
 import { SDFRenderer } from './sdfRenderer/sdfRenderer';
 import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
+import { createRuntime } from 'typegpu/web';
 
 export const GameEngine = async (canvas: HTMLCanvasElement) => {
-  const adapter = await navigator.gpu.requestAdapter();
-
-  if (!adapter) {
-    throw new Error(`Null GPU adapter`);
-  }
-
-  const device = await adapter.requestDevice();
+  const runtime = await createRuntime();
 
   const context = canvas.getContext('webgpu') as GPUCanvasContext;
 
@@ -25,15 +20,22 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
   canvas.height = canvas.clientHeight * devicePixelRatio;
   const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 
-  const gBuffer = new GBuffer(device, [canvas.width, canvas.height]);
+  const gBuffer = new GBuffer(runtime, [canvas.width, canvas.height]);
   console.log(`Rendering a ${gBuffer.size[0]} by ${gBuffer.size[1]} image`);
 
-  const sdfRenderer = SDFRenderer(device, gBuffer, true);
-  const traditionalSdfRenderer = SDFRenderer(device, gBuffer, false);
+  let sdfRenderer: Awaited<ReturnType<typeof SDFRenderer>>;
+  let traditionalSdfRenderer: Awaited<ReturnType<typeof SDFRenderer>>;
+  try {
+    sdfRenderer = await SDFRenderer(runtime, gBuffer, true);
+    traditionalSdfRenderer = await SDFRenderer(runtime, gBuffer, false);
+  } catch (err) {
+    console.error('Failed to initialize SDF renderers.');
+    throw err;
+  }
   // const gBufferMeshRenderer = new GBufferMeshRenderer(device, gBuffer);
 
   const upscaleStep = ResampleStep({
-    device,
+    runtime,
     targetFormat: 'rgba8unorm',
     sourceTexture: gBuffer.quarterView,
     targetTexture: gBuffer.upscaledView,
@@ -41,44 +43,49 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
   });
 
   const menderStep = MenderStep({
-    device,
+    runtime,
     gBuffer,
     targetTexture: gBuffer.rawRenderView,
   });
 
-  const gBufferDebugger = new GBufferDebugger(
-    device,
+  const gBufferDebugger = makeGBufferDebugger(
+    runtime,
     presentationFormat,
     gBuffer,
   );
 
   const postProcessing = PostProcessingStep({
-    device,
+    runtime,
     context,
     gBuffer,
     presentationFormat,
   });
 
-  const blipDifference = BlipDifferenceStep({
-    device,
-    context,
-    presentationFormat,
-    textures: [gBuffer.upscaledView, gBuffer.rawRenderView],
-  });
+  let blipDifference: ReturnType<typeof BlipDifferenceStep>;
+  try {
+    blipDifference = BlipDifferenceStep({
+      runtime,
+      context,
+      presentationFormat,
+      textures: [gBuffer.upscaledView, gBuffer.rawRenderView],
+    });
+  } catch (err) {
+    console.error('Failed to init BlipDifferenceStep');
+    throw err;
+  }
 
   context.configure({
-    device,
+    device: runtime.device,
     format: presentationFormat,
     alphaMode: 'premultiplied',
   });
 
   function frame() {
     const displayMode = store.get(displayModeAtom);
-    const commandEncoder = device.createCommandEncoder();
 
     // -- Rendering the whole scene & aux.
     if (displayMode === 'traditional' || displayMode === 'blur-diff') {
-      traditionalSdfRenderer.perform(commandEncoder);
+      traditionalSdfRenderer.perform();
     }
 
     if (
@@ -86,27 +93,27 @@ export const GameEngine = async (canvas: HTMLCanvasElement) => {
       displayMode === 'blur-diff' ||
       displayMode === 'mended'
     ) {
-      sdfRenderer.perform(commandEncoder);
+      sdfRenderer.perform();
       // gBufferMeshRenderer.perform(device, commandEncoder);
     }
 
     // -- Upscaling the quarter-resolution render.
-    upscaleStep.perform(commandEncoder);
+    upscaleStep.perform();
 
     // -- Displaying a result to the screen.
     if (displayMode === 'g-buffer') {
-      gBufferDebugger.perform(context, commandEncoder);
+      gBufferDebugger.perform(context);
     } else if (displayMode === 'traditional') {
-      postProcessing.perform(commandEncoder);
+      postProcessing.perform();
     } else if (displayMode === 'mended') {
       // -- Restoring quality to the render using convolution.
-      menderStep.perform(commandEncoder);
-      postProcessing.perform(commandEncoder);
+      menderStep.perform();
+      postProcessing.perform();
     } else if (displayMode === 'blur-diff') {
-      blipDifference.perform(commandEncoder);
+      blipDifference.perform();
     }
 
-    device.queue.submit([commandEncoder.finish()]);
+    runtime.flush();
     requestAnimationFrame(frame);
   }
 

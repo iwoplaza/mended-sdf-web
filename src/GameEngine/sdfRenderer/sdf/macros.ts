@@ -1,4 +1,4 @@
-import { wgsl, WGSLSegment } from 'wigsill';
+import { wgsl, WGSLSegment } from 'typegpu';
 
 export const dd = (code: WGSLSegment) => wgsl`dot(${code}, ${code})`;
 export const clamp01 = (inner: WGSLSegment) => wgsl`max(0., min(${inner}, 1.))`;
