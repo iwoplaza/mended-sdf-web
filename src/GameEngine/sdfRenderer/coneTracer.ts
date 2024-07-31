@@ -216,74 +216,79 @@ export type ConeTracerOptions = {
 };
 
 const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
-  const cone16Program = runtime.makeComputePipeline({
-    label: 'Cone Tracer - 1/16 pipeline',
-    args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
-    workgroupSize: [BlockSize, BlockSize],
-    code: wgsl`
-      ${mainComputeFn}(GlobalInvocationID);
-    `
-      // filling slots
-      .with(isFirstStep, 'true')
-      .with(inputBufferSizePlaceholder, depth2SizeBuffer.asUniform())
-      .with(outputBufferSizePlaceholder, depth16SizeBuffer.asUniform())
-      .with(
-        inputBufferPlaceholder,
-        wgsl.plum((get) => get(cBuffer.depth2BufferPlum).asStorage()),
-      )
-      .with(
-        outputBufferSlot,
-        wgsl.plum((get) => get(cBuffer.depth16BufferPlum).asStorage()),
-      )
-      .with(renderTargetSizeSlot, resolution16Buffer.asUniform()),
+  const cone16Program = wgsl.plum((get) => {
+    return runtime.makeComputePipeline({
+      label: 'Cone Tracer - 1/16 pipeline',
+      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
+      workgroupSize: [BlockSize, BlockSize],
+      code: wgsl`
+        ${mainComputeFn}(GlobalInvocationID);
+      `
+        // filling slots
+        .with(isFirstStep, 'true')
+        .with(inputBufferSizePlaceholder, depth2SizeBuffer.asUniform())
+        .with(outputBufferSizePlaceholder, depth16SizeBuffer.asUniform())
+        .with(inputBufferPlaceholder, get(cBuffer.depth2BufferPlum).asStorage())
+        .with(outputBufferSlot, get(cBuffer.depth16BufferPlum).asStorage())
+        .with(renderTargetSizeSlot, resolution16Buffer.asUniform()),
+    });
   });
 
-  const cone8Program = runtime.makeComputePipeline({
-    label: 'Cone Tracer - 1/8 pipeline',
-    args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
-    workgroupSize: [BlockSize, BlockSize],
-    code: wgsl`
-      ${mainComputeFn}(GlobalInvocationID);
-    `
-      // filling slots
-      .with(isFirstStep, 'false')
-      .with(inputBufferSizePlaceholder, depth16SizeBuffer.asUniform())
-      .with(outputBufferSizePlaceholder, depth8SizeBuffer.asUniform())
-      .with(inputBufferPlaceholder, 'depth16Buffer')
-      .with(outputBufferSlot, 'depth8Buffer')
-      .with(renderTargetSizeSlot, resolution8Buffer.asUniform()),
+  const cone8Program = wgsl.plum((get) => {
+    return runtime.makeComputePipeline({
+      label: 'Cone Tracer - 1/8 pipeline',
+      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
+      workgroupSize: [BlockSize, BlockSize],
+      code: wgsl`
+        ${mainComputeFn}(GlobalInvocationID);
+      `
+        // filling slots
+        .with(isFirstStep, 'false')
+        .with(inputBufferSizePlaceholder, depth16SizeBuffer.asUniform())
+        .with(outputBufferSizePlaceholder, depth8SizeBuffer.asUniform())
+        .with(
+          inputBufferPlaceholder,
+          get(cBuffer.depth16BufferPlum).asStorage(),
+        )
+        .with(outputBufferSlot, get(cBuffer.depth8BufferPlum).asStorage())
+        .with(renderTargetSizeSlot, resolution8Buffer.asUniform()),
+    });
   });
 
-  const cone4Program = runtime.makeComputePipeline({
-    label: 'Cone Tracer - 1/4 pipeline',
-    args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
-    workgroupSize: [BlockSize, BlockSize],
-    code: wgsl`
-      ${mainComputeFn}(GlobalInvocationID);
-    `
-      // filling slots
-      .with(isFirstStep, 'false')
-      .with(inputBufferSizePlaceholder, depth8SizeBuffer.asUniform())
-      .with(outputBufferSizePlaceholder, depth4SizeBuffer.asUniform())
-      .with(inputBufferPlaceholder, 'depth8Buffer')
-      .with(outputBufferSlot, 'depth4Buffer')
-      .with(renderTargetSizeSlot, resolution4Buffer.asUniform()),
+  const cone4Program = wgsl.plum((get) => {
+    return runtime.makeComputePipeline({
+      label: 'Cone Tracer - 1/4 pipeline',
+      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
+      workgroupSize: [BlockSize, BlockSize],
+      code: wgsl`
+        ${mainComputeFn}(GlobalInvocationID);
+      `
+        // filling slots
+        .with(isFirstStep, 'false')
+        .with(inputBufferSizePlaceholder, depth8SizeBuffer.asUniform())
+        .with(outputBufferSizePlaceholder, depth4SizeBuffer.asUniform())
+        .with(inputBufferPlaceholder, get(cBuffer.depth8BufferPlum).asStorage())
+        .with(outputBufferSlot, get(cBuffer.depth4BufferPlum).asStorage())
+        .with(renderTargetSizeSlot, resolution4Buffer.asUniform()),
+    });
   });
 
-  const cone2Program = runtime.makeComputePipeline({
-    label: 'Cone Tracer - 1/2 pipeline',
-    args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
-    workgroupSize: [BlockSize, BlockSize],
-    code: wgsl`
-      ${mainComputeFn}(GlobalInvocationID);
-    `
-      // filling slots
-      .with(isFirstStep, false)
-      .with(inputBufferSizePlaceholder, depth4SizeBuffer.asUniform())
-      .with(outputBufferSizePlaceholder, depth2SizeBuffer.asUniform())
-      .with(inputBufferPlaceholder, 'depth4Buffer')
-      .with(outputBufferSlot, 'depth2Buffer')
-      .with(renderTargetSizeSlot, resolution2Buffer.asUniform()),
+  const cone2Program = wgsl.plum((get) => {
+    return runtime.makeComputePipeline({
+      label: 'Cone Tracer - 1/2 pipeline',
+      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
+      workgroupSize: [BlockSize, BlockSize],
+      code: wgsl`
+        ${mainComputeFn}(GlobalInvocationID);
+      `
+        // filling slots
+        .with(isFirstStep, false)
+        .with(inputBufferSizePlaceholder, depth4SizeBuffer.asUniform())
+        .with(outputBufferSizePlaceholder, depth2SizeBuffer.asUniform())
+        .with(inputBufferPlaceholder, get(cBuffer.depth4BufferPlum).asStorage())
+        .with(outputBufferSlot, get(cBuffer.depth2BufferPlum).asStorage())
+        .with(renderTargetSizeSlot, resolution2Buffer.asUniform()),
+    });
   });
 
   return {
@@ -293,28 +298,28 @@ const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
       const depth4Size = runtime.readPlum(cBuffer.depth4SizePlum);
       const depth2Size = runtime.readPlum(cBuffer.depth2SizePlum);
 
-      cone16Program.execute({
+      runtime.readPlum(cone16Program).execute({
         workgroups: [
           Math.ceil(depth16Size[0] / BlockSize),
           Math.ceil(depth16Size[1] / BlockSize),
         ],
       });
 
-      cone8Program.execute({
+      runtime.readPlum(cone8Program).execute({
         workgroups: [
           Math.ceil(depth8Size[0] / BlockSize),
           Math.ceil(depth8Size[1] / BlockSize),
         ],
       });
 
-      cone4Program.execute({
+      runtime.readPlum(cone4Program).execute({
         workgroups: [
           Math.ceil(depth4Size[0] / BlockSize),
           Math.ceil(depth4Size[1] / BlockSize),
         ],
       });
 
-      cone2Program.execute({
+      runtime.readPlum(cone2Program).execute({
         workgroups: [
           Math.ceil(depth2Size[0] / BlockSize),
           Math.ceil(depth2Size[1] / BlockSize),
