@@ -8,7 +8,7 @@ import { PostProcessingStep } from './postProcessingStep';
 import { ResampleStep } from './resampleStep/resampleCubicStep';
 import { SDFRenderer } from './sdfRenderer/sdfRenderer';
 import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
-import { createRuntime } from 'typegpu/web';
+import { createRuntime } from 'typegpu';
 
 export const GameEngine = async (canvas: HTMLCanvasElement) => {
   const runtime = await createRuntime();

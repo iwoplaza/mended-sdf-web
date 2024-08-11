@@ -1,4 +1,4 @@
-import wgsl, { type TypeGpuRuntime } from 'typegpu';
+import { wgsl, type TypeGpuRuntime } from 'typegpu';
 import { f32, struct, vec3f } from 'typegpu/data';
 import type { GBuffer } from '../../gBuffer';
 import {
@@ -49,7 +49,7 @@ const marchWithSurfaceDist = march(surfaceDist).$name(
  * @param normal
  * @param mat_roughness
  */
-const reflect = wgsl.fn()`(ray_dir: vec3f, normal: vec3f, mat_roughness: f32, out_roughness: ptr<function, f32>) -> vec3f {
+const reflect = wgsl.fn`(ray_dir: vec3f, normal: vec3f, mat_roughness: f32, out_roughness: ptr<function, f32>) -> vec3f {
   let slope = dot(ray_dir, normal);
   let dn2 = 2. * slope;
   let refl_dir = ray_dir - dn2 * normal;
@@ -61,9 +61,9 @@ const reflect = wgsl.fn()`(ray_dir: vec3f, normal: vec3f, mat_roughness: f32, ou
   var new_ray_dir = ${randOnHemisphere}(normal);
   new_ray_dir = mix(refl_dir, new_ray_dir, roughness);
   return normalize(new_ray_dir);
-}`;
+}`.$name('reflect');
 
-const worldNormals = wgsl.fn()`(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
+const worldNormals = wgsl.fn`(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
   let epsilon = ${surfaceDist}(ctx) * 0.1; // arbitrary - should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
   let offX = vec3f(point.x + epsilon, point.y, point.z);
   let offY = vec3f(point.x, point.y + epsilon, point.z);
@@ -81,7 +81,7 @@ const worldNormals = wgsl.fn()`(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
   ) / epsilon);
 }`.$name('world_normals');
 
-const renderSubPixel = wgsl.fn()`(coord: vec2f) -> vec3f {
+const renderSubPixel = wgsl.fn`(coord: vec2f) -> vec3f {
   /// doing the first march before each sub-sample, since the first march result is the same for all of them
 
   var init_shape_ctx: ${ShapeContext};
@@ -174,7 +174,7 @@ const externalDeclarations = (outputFormat: string) => [
   wgsl`@group(0) @binding(0) var output_tex: texture_storage_2d<${outputFormat}, write>;`,
 ];
 
-const mainComputeFn = wgsl.fn()`(LocalInvocationID: vec3u, GlobalInvocationID: vec3u) {
+const mainComputeFn = wgsl.fn`(LocalInvocationID: vec3u, GlobalInvocationID: vec3u) {
   ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) * 10. + ${randomSeedPrimerUniform} * 1234.);
 
   var acc = vec3f(0., 0., 0.);
@@ -198,7 +198,7 @@ const mainComputeFn = wgsl.fn()`(LocalInvocationID: vec3u, GlobalInvocationID: v
   textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
 }`.$name('main_compute');
 
-const auxComputeFn = wgsl.fn()`(LocalInvocationID: vec3<u32>, GlobalInvocationID: vec3<u32>) {
+const auxComputeFn = wgsl.fn`(LocalInvocationID: vec3<u32>, GlobalInvocationID: vec3<u32>) {
   let offset = vec2f(
     0.5,
     0.5,

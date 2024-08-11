@@ -6,9 +6,9 @@ import { wgsl } from 'typegpu';
 
  * @returns 3d sdf
  */
-export const inflateWGSL = wgsl.fn('op_inflate')`(d: f32, r: f32) -> f32 {
+export const inflateWGSL = wgsl.fn`(d: f32, r: f32) -> f32 {
   return d - r;
-}`;
+}`.$name('op_inflate');
 
 export function inflate(d: number, r: number) {
   return d - r;

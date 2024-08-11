@@ -1,11 +1,12 @@
 import { vec2f } from 'typegpu/data/index';
-import { wgsl, type TypeGpuRuntime } from 'typegpu';
+import { type Wgsl, wgsl, type TypeGpuRuntime } from 'typegpu';
 
 import { Model7 } from './model7';
 import type { GBuffer } from './gBuffer';
 import { NetworkLayer } from './networkLayer';
 import { fullScreenQuadVertexShader } from './shaders/fullScreenQuad';
 import { convertRgbToY } from './GameEngine/sdfRenderer/colorUtils';
+import { convolveFn } from './GameEngine/convolve';
 
 const blockDim = 8;
 
@@ -52,7 +53,7 @@ const weightCount = wgsl
 const BLOCK_SIZE = 8;
 const TILE_PADDING = 4;
 
-// const convolveLocalFn = wgsl.fn()`(local: vec2u, result: ptr<function, array<f32, ${outChannelsSlot}>>) {
+// const convolveLocalFn = wgsl.fn`(local: vec2u, result: ptr<function, array<f32, ${outChannelsSlot}>>) {
 //   var weight_idx: u32 = 0;
 
 //   for (var out_c: u32 = 0; out_c < ${outChannelsSlot}; out_c++) {
@@ -73,7 +74,8 @@ const TILE_PADDING = 4;
 //   }
 // }`;
 
-const sampleGlobal = wgsl.fn()`(x: i32, y: i32, result: ptr<function, array<vec4f, ${inChannelsSlot} / 4>>) {
+const sampleGlobal =
+  wgsl.fn`(x: i32, y: i32, result: ptr<function, array<vec4f, ${inChannelsSlot} / 4>>) {
   let coord = vec2u(
     u32(max(0, min(x, i32(${canvasSizeUniform}.x) - 1))),
     u32(max(0, min(y, i32(${canvasSizeUniform}.y) - 1))),
@@ -115,42 +117,30 @@ const sampleGlobal = wgsl.fn()`(x: i32, y: i32, result: ptr<function, array<vec4
       (*result)[i] = inputBuffer[index];
     }
   }
-}`;
+}`.$name('sample_global');
 
-const applyReLU = wgsl.fn()`(result: ptr<function, array<f32, ${outChannelsSlot}>>) {
+const applyReLU = wgsl.fn`(result: ptr<function, array<f32, ${outChannelsSlot}>>) {
   for (var i = 0u; i < ${outChannelsSlot}; i++) {
     (*result)[i] = max(0, (*result)[i]);
   }
-}`;
+}`.$name('apply_relu');
 
-const convolveFn = wgsl.fn()`(coord: vec2u, result: ptr<function, array<f32, ${outChannelsSlot}>>) {
-  var sample = array<vec4f, ${inChannelsSlot} / 4>();
+const menderConvolveFn = convolveFn({
+  inChannels: inChannelsSlot,
+  outChannels: outChannelsSlot,
+  kernelRadius: kernelRadiusSlot,
+  sampleFiller: (x: Wgsl, y: Wgsl, outSamplePtr: Wgsl) =>
+    wgsl`${sampleGlobal}(${x}, ${y}, ${outSamplePtr});`,
+  kernelReader: (idx: Wgsl) => wgsl`conv1Weight[${idx}]`,
+});
 
-  var coord_idx: u32 = 0;
-  for (var i: i32 = -i32(${kernelRadiusSlot}); i <= i32(${kernelRadiusSlot}); i++) {
-    for (var j: i32 = -i32(${kernelRadiusSlot}); j <= i32(${kernelRadiusSlot}); j++) {
-      ${sampleGlobal}(i32(coord.x) + i, i32(coord.y) + j, &sample);
-
-      for (var out_c: u32 = 0; out_c < ${outChannelsSlot}; out_c++) {
-        var weight_idx = (coord_idx + out_c * (2 * ${kernelRadiusSlot} + 1) * (2 * ${kernelRadiusSlot} + 1)) * ${inChannelsSlot} / 4;
-        for (var in_c: u32 = 0; in_c < ${inChannelsSlot} / 4; in_c++) {
-          (*result)[out_c] += dot(sample[in_c], conv1Weight[weight_idx]);
-          weight_idx++;
-        }
-      }
-
-      coord_idx++;
-    }
-  }
-}`;
-
-const convolveMainFn = wgsl.fn()`(LocalInvocationID: vec3<u32>, GlobalInvocationID: vec3<u32>) {
+const convolveMainFn = wgsl.fn`(LocalInvocationID: vec3<u32>, GlobalInvocationID: vec3<u32>) {
   let coord = GlobalInvocationID.xy;
   let lid = LocalInvocationID.xy;
 
   var result = conv1Bias;
 
-  ${convolveFn}(coord, &result);
+  ${menderConvolveFn}(coord, &result);
 
   if (${reluSlot}) {
     ${applyReLU}(&result);
@@ -170,7 +160,7 @@ const combineExternalDeclarations = [
   wgsl`@group(0) @binding(1) var<storage, read> mendedBuffer: array<f32>;`,
 ];
 
-const combineFn = wgsl.fn()`(coord_f: vec4f) -> vec4f {
+const combineFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   var coord = vec2u(floor(coord_f.xy));
 
   let blurred = textureLoad(
@@ -280,7 +270,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
     outChannels: number;
     relu: boolean;
     inputFromGBuffer: boolean;
-    layout: GPUBindGroupLayout,
+    layout: GPUBindGroupLayout;
   }) => {
     const pipeline = runtime.makeComputePipeline({
       workgroupSize: [BLOCK_SIZE, BLOCK_SIZE],
@@ -289,27 +279,27 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
         '@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>',
       ],
       code: wgsl`
-        ${wgsl.declare('@group(0) @binding(0) var<storage, read_write> outputBuffer: array<f32>;')}
-        ${wgsl.declare('@group(0) @binding(1) var<storage, read> inputBuffer: array<vec4f>;')}
-        ${wgsl.declare('@group(0) @binding(2) var blurredTex: texture_2d<f32>;')}
-        ${wgsl.declare('@group(0) @binding(3) var auxTex: texture_2d<f32>;')}
+        ${wgsl.declare`@group(0) @binding(0) var<storage, read_write> outputBuffer: array<f32>;`}
+        ${wgsl.declare`@group(0) @binding(1) var<storage, read> inputBuffer: array<vec4f>;`}
+        ${wgsl.declare`@group(0) @binding(2) var blurredTex: texture_2d<f32>;`}
+        ${wgsl.declare`@group(0) @binding(3) var auxTex: texture_2d<f32>;`}
 
-        ${wgsl.declare(wgsl`@group(1) @binding(0) var<storage, read> conv1Weight: array<vec4f, ${weightCount} / 4>;`)}
-        ${wgsl.declare(wgsl`@group(1) @binding(1) var<storage, read> conv1Bias: array<f32, ${outChannelsSlot}>;`)}
-        ${wgsl.declare(wgsl`
+        ${wgsl.declare`@group(1) @binding(0) var<storage, read> conv1Weight: array<vec4f, ${weightCount} / 4>;`}
+        ${wgsl.declare`@group(1) @binding(1) var<storage, read> conv1Bias: array<f32, ${outChannelsSlot}>;`}
+        ${wgsl.declare`
           // BLOCK_SIZExBLOCK_SIZE tile extended by 4 pixel padding to accommodate the 9x9 kernel.
           // Layout: Width x Height x Channel
           var<workgroup> tile: array<array<array<vec4f, ${inChannelsSlot} / 4>, ${BLOCK_SIZE} + ${TILE_PADDING} * 2>, ${BLOCK_SIZE} + ${TILE_PADDING} * 2>;
-        `)}
+        `}
 
         ${convolveMainFn}(LocalInvocationID, GlobalInvocationID);
       `
-      // filling slots
-      .with(kernelRadiusSlot, options.kernelRadius)
-      .with(inChannelsSlot, options.inChannels)
-      .with(outChannelsSlot, options.outChannels)
-      .with(reluSlot, options.relu)
-      .with(inputFromGBufferSlot, options.inputFromGBuffer),
+        // filling slots
+        .with(kernelRadiusSlot, options.kernelRadius)
+        .with(inChannelsSlot, options.inChannels)
+        .with(outChannelsSlot, options.outChannels)
+        .with(reluSlot, options.relu)
+        .with(inputFromGBufferSlot, options.inputFromGBuffer),
       // ---
       label: options.label,
       externalLayouts: [ioBindGroupLayout, options.layout],

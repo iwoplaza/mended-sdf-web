@@ -1,5 +1,5 @@
 import { mat4, vec3 } from 'wgpu-matrix';
-import wgsl, { type TypeGpuRuntime } from 'typegpu';
+import { wgsl, type TypeGpuRuntime } from 'typegpu';
 import { mat4f, struct } from 'typegpu/data';
 import { RenderTargetHeight, RenderTargetWidth } from './worldSdf';
 
@@ -15,11 +15,11 @@ export const cameraBuffer = wgsl
 
 export const cameraUniform = cameraBuffer.asUniform();
 
-export const constructRayPos = wgsl.fn()`() -> vec3f {
+export const constructRayPos = wgsl.fn`() -> vec3f {
   return (${cameraUniform}.inv_view_matrix * vec4(0., 0., 0., 1.)).xyz;
 }`.$name('construct_ray_pos');
 
-export const constructRayDir = wgsl.fn()`(coord: vec2f) -> vec3f {
+export const constructRayDir = wgsl.fn`(coord: vec2f) -> vec3f {
   let viewport_size = vec2f(${RenderTargetWidth}, ${RenderTargetHeight});
   var view_coords = (coord - viewport_size / 2.) / ${RenderTargetHeight};
 

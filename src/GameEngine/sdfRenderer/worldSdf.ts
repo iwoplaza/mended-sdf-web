@@ -1,4 +1,4 @@
-import wgsl from 'typegpu';
+import { wgsl } from 'typegpu';
 import { f32, bool, struct, vec3f } from 'typegpu/data';
 import { sdf } from './sdf';
 
@@ -10,7 +10,9 @@ export const randomSeedPrimerBuffer = wgsl
   .buffer(f32)
   .$name('random_seed_primer')
   .$allowUniform();
-export const randomSeedPrimerUniform = randomSeedPrimerBuffer.asUniform().$name('random_seed_primer_uniform');
+export const randomSeedPrimerUniform = randomSeedPrimerBuffer
+  .$name('random_seed_primer')
+  .asUniform();
 
 export const ShapeContext = struct({
   ray_pos: vec3f,
@@ -24,29 +26,29 @@ export const Material = struct({
   emissive: bool,
 });
 
-export const surfaceDist = wgsl.fn()`(ctx: ${ShapeContext}) -> f32 {
+export const surfaceDist = wgsl.fn`(ctx: ${ShapeContext}) -> f32 {
   let dist_from_camera = ctx.ray_distance;
   return dist_from_camera / ${RenderTargetHeight} * 0.01;
 }`;
 
-const objLeftBlob = wgsl.fn()`(pos: vec3f) -> f32 {
+const objLeftBlob = wgsl.fn`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(-0.3, -0.2, -2.), 0.2);
 }`.$name('obj_left_blob');
 
-const objCenterBlob = wgsl.fn()`(pos: vec3f) -> f32 {
+const objCenterBlob = wgsl.fn`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(0., 0.7, -2.), 0.2);
 }`.$name('obj_center_blob');
 
-const objRightBlob = wgsl.fn()`(pos: vec3f) -> f32 {
+const objRightBlob = wgsl.fn`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(0.4, 0.2 + sin(${timeUniform} * 0.001) * 0.1, -2.), 0.4);
 }`;
 
-const objFloor = wgsl.fn()`(pos: vec3f) -> f32 {
+const objFloor = wgsl.fn`(pos: vec3f) -> f32 {
   return pos.y + 0.3;
 }`;
 
 // biome-ignore format:
-const matFloor = wgsl.fn()`(pos: vec3f, mtr: ptr<function, ${Material}>) {
+const matFloor = wgsl.fn`(pos: vec3f, mtr: ptr<function, ${Material}>) {
   let uv = floor(5.0 * pos.xz);
   let c = 0.2 + 0.5 * ((uv.x + uv.y) - 2.0 * floor((uv.x + uv.y) / 2.0));
   
@@ -56,7 +58,7 @@ const matFloor = wgsl.fn()`(pos: vec3f, mtr: ptr<function, ${Material}>) {
 
 export const FAR = wgsl.constant('100.');
 
-export const worldSdf = wgsl.fn('world_sdf')`(pos: vec3f) -> f32 {
+export const worldSdf = wgsl.fn`(pos: vec3f) -> f32 {
   var min_dist = ${FAR};
 
   min_dist = min(min_dist, ${objLeftBlob}(pos));
@@ -65,11 +67,11 @@ export const worldSdf = wgsl.fn('world_sdf')`(pos: vec3f) -> f32 {
   min_dist = min(min_dist, ${objFloor}(pos));
 
   return min_dist;
-}`;
+}`.$name('world_sdf');
 
 // MATERIALS
 
-export const skyColor = wgsl.fn('sky_color')`(dir: vec3f) -> vec3f {
+export const skyColor = wgsl.fn`(dir: vec3f) -> vec3f {
   let t = pow(min(abs(dir.y) * 4, 1.), 0.4);
   
   let uv = floor(30.0 * dir.xy);
@@ -80,11 +82,10 @@ export const skyColor = wgsl.fn('sky_color')`(dir: vec3f) -> vec3f {
     vec3f(0.35, 0.4, 0.6),
     t,
   );
-}`;
+}`.$name('sky_color');
 
-export const worldMat = wgsl.fn(
-  'world_mat',
-)`(pos: vec3f, ctx: ${ShapeContext}, out: ptr<function, ${Material}>) {
+export const worldMat =
+  wgsl.fn`(pos: vec3f, ctx: ${ShapeContext}, out: ptr<function, ${Material}>) {
   let sd = ${surfaceDist}(ctx);
   let d_left_blob = ${objLeftBlob}(pos);
   let d_center_blob = ${objCenterBlob}(pos);
@@ -116,6 +117,6 @@ export const worldMat = wgsl.fn(
     // (*out).albedo = vec3f(0.5, 0.5, 0.2);
     (*out).albedo = ${skyColor}(ctx.ray_dir);
   }
-}`;
+}`.$name('world_mat');
 
 export default worldSdf;

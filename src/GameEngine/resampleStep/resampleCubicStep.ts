@@ -22,7 +22,7 @@ const externalDeclarations = [
  * Implementation based on:
  * https://developer.nvidia.com/gpugems/gpugems2/part-iii-high-quality-rendering/chapter-20-fast-third-order-texture-filtering
  */
-const resampleCubic = wgsl.fn()`(uv: vec2f) -> vec4f {
+const resampleCubic = wgsl.fn`(uv: vec2f) -> vec4f {
   // calc filter texture coordinates where [0,1] is a single texel
   // (can be done in vertex program instead)
   let coord_hg = uv * vec2f(${canvasUniform}.size) - vec2f(0.5f, 0.5f);      // fetch offsets and weights from filter texture

@@ -13,7 +13,7 @@ const canvasSizeBuffer = wgsl
   .$allowUniform();
 const canvasSizeUniform = canvasSizeBuffer.asUniform();
 
-const mainFragFn = wgsl.fn()`(coord_f: vec4f) -> vec4f {
+const mainFragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   let coord = vec2<i32>(floor(coord_f.xy));
 
   let blurred = textureLoad(
@@ -138,8 +138,8 @@ export function makeGBufferDebugger(
     fragment: {
       args: ['@builtin(position) coord_f: vec4f'],
       code: wgsl`
-        ${wgsl.declare(wgsl`@group(0) @binding(0) var blurredTex: texture_2d<f32>;`)}
-        ${wgsl.declare(wgsl`@group(0) @binding(1) var auxTex: texture_2d<f32>;`)}
+        ${wgsl.declare`@group(0) @binding(0) var blurredTex: texture_2d<f32>;`}
+        ${wgsl.declare`@group(0) @binding(1) var auxTex: texture_2d<f32>;`}
 
         return ${mainFragFn}(coord_f);
       `,

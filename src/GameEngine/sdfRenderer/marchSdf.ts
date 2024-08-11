@@ -1,4 +1,4 @@
-import wgsl, { type WgslFn } from 'typegpu';
+import { wgsl, type WgslFn } from 'typegpu';
 import { struct, u32, vec3f } from 'typegpu/data';
 import worldSdf, { FAR, ShapeContext } from './worldSdf';
 
@@ -9,10 +9,8 @@ export const MarchResult = struct({
   position: vec3f,
 });
 
-export const march = (
-  distThresholdFn: WgslFn,
-) =>
-  wgsl.fn()`(ctx: ptr<function, ${ShapeContext}>, limit: u32, out: ptr<function, ${MarchResult}>) {
+export const march = (distThresholdFn: WgslFn) =>
+  wgsl.fn`(ctx: ptr<function, ${ShapeContext}>, limit: u32, out: ptr<function, ${MarchResult}>) {
     var pos = (*ctx).ray_pos;
     var prev_dist = -1.;
     var min_dist = ${FAR};

@@ -1,21 +1,22 @@
-import { BufferWriter } from 'typed-binary';
+import { type Wgsl, wgsl, type TypeGpuRuntime } from 'typegpu';
+import { i32, struct } from 'typegpu/data';
 
-import menderWGSL from '../shaders/convolve.wgsl?raw';
-import { GBuffer } from '../gBuffer';
+import type { GBuffer } from '../gBuffer';
 import { SceneSchema } from '../schema/scene';
 import { NetworkLayer } from '../networkLayer';
-import { preprocessShaderCode } from '../preprocessShaderCode';
+import { convolveFn } from './convolve';
+import { convertRgbToY } from './sdfRenderer/colorUtils';
 
 const blockDim = 8;
 
 type Options = {
-  device: GPUDevice;
+  runtime: TypeGpuRuntime;
   gBuffer: GBuffer;
   menderResultBuffer: GPUBuffer;
 };
 
 export const EdgeDetectionStep = ({
-  device,
+  runtime,
   gBuffer,
   menderResultBuffer,
 }: Options) => {
@@ -23,7 +24,7 @@ export const EdgeDetectionStep = ({
   // Weights & Biases
   //
 
-  const noWorkBuffer = device.createBuffer({
+  const noWorkBuffer = runtime.device.createBuffer({
     label: 'No Work Buffer',
     size: 4,
     usage: GPUBufferUsage.STORAGE,
@@ -35,7 +36,7 @@ export const EdgeDetectionStep = ({
 
   // edge detection in the Y direction
   const convLayer = new NetworkLayer(
-    device,
+    runtime.device,
     new Float32Array([
       ...zeroInChannels(-1),
       ...zeroInChannels(0),
@@ -120,6 +121,76 @@ export const EdgeDetectionStep = ({
         },
       },
     ],
+  });
+
+  const canvasSizeBuffer = wgsl
+    .buffer(struct({ x: i32, y: i32 }), {
+      x: gBuffer.size[0],
+      y: gBuffer.size[1],
+    })
+    .$name('canvas_size')
+    .$allowUniform();
+
+  const canvasSizeUniform = canvasSizeBuffer.asUniform();
+
+  const sampleFn = wgsl.fn`(x: i32, y: i32, result: ptr<function, array<vec4f, 1>>) {
+    let coord = vec2u(
+      u32(max(0, min(x, i32(${canvasSizeUniform}.x) - 1))),
+      u32(max(0, min(y, i32(${canvasSizeUniform}.y) - 1))),
+    );
+  
+    let blurred = textureLoad(
+      blurredTex,
+      coord,
+      0
+    );
+
+    (*result)[0] = vec4f(${convertRgbToY}(blurred.rgb), 0, 0, 0);
+  }`;
+
+  const edgeConvolveFn = convolveFn({
+    inChannels: 4,
+    outChannels: 1,
+    kernelRadius: 1,
+    sampleFiller: (x: Wgsl, y: Wgsl, outSamplePtr: Wgsl) =>
+      wgsl`${sampleFn}(${x}, ${y}, ${outSamplePtr});`,
+    kernelReader: (idx: Wgsl) => wgsl`conv1Weight[${idx}]`,
+  });
+
+  const weightCount = wgsl
+    .constant(
+      wgsl`${outChannelsSlot} * (2 * ${kernelRadiusSlot} + 1) * (2 * ${kernelRadiusSlot} + 1) * ${inChannelsSlot}`,
+    )
+    .$name('weight_count');
+
+  const newPipeline = runtime.makeComputePipeline({
+    label: 'Edge Detection Pipeline',
+    workgroupSize: [blockDim, blockDim],
+    args: [
+      '@builtin(local_invocation_id) LocalInvocationID: vec3<u32>',
+      '@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>',
+    ],
+    code: wgsl`
+      ${wgsl.declare`@group(0) @binding(0) var<storage, read_write> outputBuffer: array<f32>;`}
+      ${wgsl.declare`@group(0) @binding(1) var<storage, read> inputBuffer: array<vec4f>;`}
+      ${wgsl.declare`@group(0) @binding(2) var blurredTex: texture_2d<f32>;`}
+
+      ${wgsl.declare`@group(1) @binding(0) var<storage, read> conv1Weight: array<vec4f, ${weightCount} / 4>;`}
+
+      let coord = GlobalInvocationID.xy;
+      let lid = LocalInvocationID.xy;
+
+      var result: array<vec4f, 1>;
+      result[0] = vec4f();
+
+      ${edgeConvolveFn}(coord, &result);
+
+      let outputBufferBegin =
+        (coord.y * u32(${canvasSizeUniform}.x) +
+        coord.x);
+
+      outputBuffer[outputBufferBegin] = result[0];
+    `,
   });
 
   const pipeline = device.createComputePipeline({

@@ -20,7 +20,7 @@ const externalDeclarations = [
   wgsl`@group(0) @binding(0) var sourceTexture: texture_2d<f32>;`,
 ];
 
-const mainFragFn = wgsl.fn()`(coord_f: vec4f) -> vec4f {
+const mainFragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   var coord = vec2u(floor(coord_f.xy));
 
   let color = textureLoad(
