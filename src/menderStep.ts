@@ -65,8 +65,8 @@ const TILE_PADDING = 4;
 
 //         for (var in_c: u32 = 0; in_c < ${inChannelsSlot} / 4; in_c++) {
 //           let some = tile[local.x + i][local.y + j][in_c];
-//           (*result_channel) += dot((*tile_slice)[in_c], conv1Weight[weight_idx]);
-//           // (*result_channel) = conv1Weight[weight_idx].x * f32(i * j) / 10.0;
+//           (*result_channel) += dot((*tile_slice)[in_c], conv_weights[weight_idx]);
+//           // (*result_channel) = conv_weights[weight_idx].x * f32(i * j) / 10.0;
 //           weight_idx++;
 //         }
 //       }
@@ -83,13 +83,13 @@ const sampleGlobal =
 
   if (${inputFromGBufferSlot}) {
     let blurred = textureLoad(
-      blurredTex,
+      blurred_tex,
       coord,
       0
     );
 
     var aux = textureLoad(
-      auxTex,
+      aux_tex,
       coord,
       0
     );
@@ -114,16 +114,18 @@ const sampleGlobal =
         coord.x) * ${inChannelsSlot}/4 +
         i;
       
-      (*result)[i] = inputBuffer[index];
+      (*result)[i] = input_buffer[index];
     }
   }
 }`.$name('sample_global');
 
-const applyReLU = wgsl.fn`(result: ptr<function, array<f32, ${outChannelsSlot}>>) {
-  for (var i = 0u; i < ${outChannelsSlot}; i++) {
-    (*result)[i] = max(0, (*result)[i]);
+const applyReLU = wgsl.fn`
+  (result: ptr<function, array<f32, ${outChannelsSlot}>>) {
+    for (var i = 0u; i < ${outChannelsSlot}; i++) {
+      (*result)[i] = max(0, (*result)[i]);
+    }
   }
-}`.$name('apply_relu');
+`.$name('apply_relu');
 
 const menderConvolveFn = convolveFn({
   inChannels: inChannelsSlot,
@@ -131,32 +133,29 @@ const menderConvolveFn = convolveFn({
   kernelRadius: kernelRadiusSlot,
   sampleFiller: (x: Wgsl, y: Wgsl, outSamplePtr: Wgsl) =>
     wgsl`${sampleGlobal}(${x}, ${y}, ${outSamplePtr});`,
-  kernelReader: (idx: Wgsl) => wgsl`conv1Weight[${idx}]`,
+  kernelReader: (idx: Wgsl) => wgsl`conv_weights[${idx}]`,
 });
 
-const convolveMainFn = wgsl.fn`(LocalInvocationID: vec3<u32>, GlobalInvocationID: vec3<u32>) {
-  let coord = GlobalInvocationID.xy;
-  let lid = LocalInvocationID.xy;
+const convolveMainFn = wgsl.fn`(coord: vec3<u32>) {
+  var result = conv_bias;
 
-  var result = conv1Bias;
-
-  ${menderConvolveFn}(coord, &result);
+  ${menderConvolveFn}(coord.xy, &result);
 
   if (${reluSlot}) {
     ${applyReLU}(&result);
   }
 
-  let outputBufferBegin =
+  let output_buffer_begin =
     (coord.y * u32(${canvasSizeUniform}.x) +
     coord.x) * ${outChannelsSlot};
 
   for (var i: u32 = 0; i < ${outChannelsSlot}; i++) {
-    outputBuffer[outputBufferBegin + i] = result[i];
+    output_buffer[output_buffer_begin + i] = result[i];
   }
 }`;
 
 const combineExternalDeclarations = [
-  wgsl`@group(0) @binding(0) var blurredTexture: texture_2d<f32>;`,
+  wgsl`@group(0) @binding(0) var blurred_texture: texture_2d<f32>;`,
   wgsl`@group(0) @binding(1) var<storage, read> mendedBuffer: array<f32>;`,
 ];
 
@@ -164,7 +163,7 @@ const combineFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   var coord = vec2u(floor(coord_f.xy));
 
   let blurred = textureLoad(
-    blurredTexture,
+    blurred_texture,
     coord,
     0
   );
@@ -228,7 +227,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
   const ioBindGroupLayout = device.createBindGroupLayout({
     label: 'Mender IO BindGroup Layout',
     entries: [
-      // outputBuffer
+      // output_buffer
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
@@ -236,7 +235,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
           type: 'storage',
         },
       },
-      // inputBuffer
+      // input_buffer
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
@@ -244,7 +243,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
           type: 'read-only-storage',
         },
       },
-      // blurredTex
+      // blurred_tex
       {
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
@@ -252,7 +251,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
           sampleType: 'unfilterable-float',
         },
       },
-      // auxTex
+      // aux_tex
       {
         binding: 3,
         visibility: GPUShaderStage.COMPUTE,
@@ -274,25 +273,22 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
   }) => {
     const pipeline = runtime.makeComputePipeline({
       workgroupSize: [BLOCK_SIZE, BLOCK_SIZE],
-      args: [
-        '@builtin(local_invocation_id) LocalInvocationID: vec3<u32>',
-        '@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>',
-      ],
+      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>'],
       code: wgsl`
-        ${wgsl.declare`@group(0) @binding(0) var<storage, read_write> outputBuffer: array<f32>;`}
-        ${wgsl.declare`@group(0) @binding(1) var<storage, read> inputBuffer: array<vec4f>;`}
-        ${wgsl.declare`@group(0) @binding(2) var blurredTex: texture_2d<f32>;`}
-        ${wgsl.declare`@group(0) @binding(3) var auxTex: texture_2d<f32>;`}
+        ${wgsl.declare`@group(0) @binding(0) var<storage, read_write> output_buffer: array<f32>;`}
+        ${wgsl.declare`@group(0) @binding(1) var<storage, read> input_buffer: array<vec4f>;`}
+        ${wgsl.declare`@group(0) @binding(2) var blurred_tex: texture_2d<f32>;`}
+        ${wgsl.declare`@group(0) @binding(3) var aux_tex: texture_2d<f32>;`}
 
-        ${wgsl.declare`@group(1) @binding(0) var<storage, read> conv1Weight: array<vec4f, ${weightCount} / 4>;`}
-        ${wgsl.declare`@group(1) @binding(1) var<storage, read> conv1Bias: array<f32, ${outChannelsSlot}>;`}
+        ${wgsl.declare`@group(1) @binding(0) var<storage, read> conv_weights: array<vec4f, ${weightCount} / 4>;`}
+        ${wgsl.declare`@group(1) @binding(1) var<storage, read> conv_bias: array<f32, ${outChannelsSlot}>;`}
         ${wgsl.declare`
           // BLOCK_SIZExBLOCK_SIZE tile extended by 4 pixel padding to accommodate the 9x9 kernel.
           // Layout: Width x Height x Channel
           var<workgroup> tile: array<array<array<vec4f, ${inChannelsSlot} / 4>, ${BLOCK_SIZE} + ${TILE_PADDING} * 2>, ${BLOCK_SIZE} + ${TILE_PADDING} * 2>;
         `}
 
-        ${convolveMainFn}(LocalInvocationID, GlobalInvocationID);
+        ${convolveMainFn}(GlobalInvocationID);
       `
         // filling slots
         .with(kernelRadiusSlot, options.kernelRadius)
@@ -343,17 +339,17 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
       label: 'Layer #1 IO BindGroup',
       layout: ioBindGroupLayout,
       entries: [
-        // blurredTex
+        // blurred_tex
         {
           binding: 2,
           resource: gBuffer.upscaledView,
         },
-        // auxTex
+        // aux_tex
         {
           binding: 3,
           resource: gBuffer.auxView,
         },
-        // outputBuffer
+        // output_buffer
         {
           binding: 0,
           resource: {
@@ -361,7 +357,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
           },
         },
 
-        // UNUSED inputBuffer
+        // UNUSED input_buffer
         {
           binding: 1,
           resource: { buffer: secondWorkBuffer },
@@ -372,14 +368,14 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
       label: 'Layer #2 IO BindGroup',
       layout: ioBindGroupLayout,
       entries: [
-        // inputBuffer
+        // input_buffer
         {
           binding: 1,
           resource: {
             buffer: firstWorkBuffer,
           },
         },
-        // outputBuffer
+        // output_buffer
         {
           binding: 0,
           resource: {
@@ -387,12 +383,12 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
           },
         },
 
-        // UNUSED blurredTex
+        // UNUSED blurred_tex
         {
           binding: 2,
           resource: gBuffer.upscaledView,
         },
-        // UNUSED auxTex
+        // UNUSED aux_tex
         {
           binding: 3,
           resource: gBuffer.auxView,
@@ -403,14 +399,14 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
       label: 'Layer #3 IO BindGroup',
       layout: ioBindGroupLayout,
       entries: [
-        // inputBuffer
+        // input_buffer
         {
           binding: 1,
           resource: {
             buffer: secondWorkBuffer,
           },
         },
-        // outputBuffer
+        // output_buffer
         {
           binding: 0,
           resource: {
@@ -418,12 +414,12 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
           },
         },
 
-        // UNUSED blurredTex
+        // UNUSED blurred_tex
         {
           binding: 2,
           resource: gBuffer.upscaledView,
         },
-        // UNUSED auxTex
+        // UNUSED aux_tex
         {
           binding: 3,
           resource: gBuffer.auxView,

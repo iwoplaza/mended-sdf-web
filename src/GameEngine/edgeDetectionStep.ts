@@ -88,7 +88,7 @@ export const EdgeDetectionStep = ({
   const ioBindGroupLayout = device.createBindGroupLayout({
     label: 'Edge Detection IO BindGroup Layout',
     entries: [
-      // outputBuffer
+      // output_buffer
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
@@ -96,7 +96,7 @@ export const EdgeDetectionStep = ({
           type: 'storage',
         },
       },
-      // inputBuffer
+      // input_buffer
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
@@ -104,7 +104,7 @@ export const EdgeDetectionStep = ({
           type: 'read-only-storage',
         },
       },
-      // blurredTex
+      // blurred_tex
       {
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
@@ -140,7 +140,7 @@ export const EdgeDetectionStep = ({
     );
   
     let blurred = textureLoad(
-      blurredTex,
+      blurred_tex,
       coord,
       0
     );
@@ -171,9 +171,9 @@ export const EdgeDetectionStep = ({
       '@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>',
     ],
     code: wgsl`
-      ${wgsl.declare`@group(0) @binding(0) var<storage, read_write> outputBuffer: array<f32>;`}
-      ${wgsl.declare`@group(0) @binding(1) var<storage, read> inputBuffer: array<vec4f>;`}
-      ${wgsl.declare`@group(0) @binding(2) var blurredTex: texture_2d<f32>;`}
+      ${wgsl.declare`@group(0) @binding(0) var<storage, read_write> output_buffer: array<f32>;`}
+      ${wgsl.declare`@group(0) @binding(1) var<storage, read> input_buffer: array<vec4f>;`}
+      ${wgsl.declare`@group(0) @binding(2) var blurred_tex: texture_2d<f32>;`}
 
       ${wgsl.declare`@group(1) @binding(0) var<storage, read> conv1Weight: array<vec4f, ${weightCount} / 4>;`}
 
@@ -185,11 +185,11 @@ export const EdgeDetectionStep = ({
 
       ${edgeConvolveFn}(coord, &result);
 
-      let outputBufferBegin =
+      let output_buffer_begin =
         (coord.y * u32(${canvasSizeUniform}.x) +
         coord.x);
 
-      outputBuffer[outputBufferBegin] = result[0];
+      output_buffer[output_buffer_begin] = result[0];
     `,
   });
 
@@ -231,7 +231,7 @@ export const EdgeDetectionStep = ({
     label: 'Layer #1 IO BindGroup',
     layout: ioBindGroupLayout,
     entries: [
-      // blurredTex
+      // blurred_tex
       {
         binding: 2,
         resource: gBuffer.upscaledView,
@@ -241,7 +241,7 @@ export const EdgeDetectionStep = ({
         binding: 3,
         resource: gBuffer.auxView,
       },
-      // outputBuffer
+      // output_buffer
       {
         binding: 0,
         resource: {

@@ -4,7 +4,11 @@ export class NetworkLayer {
   biasBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
 
-  constructor(device: GPUDevice, weightData: Float32Array, biasData: Float32Array) {
+  constructor(
+    device: GPUDevice,
+    weightData: Float32Array,
+    biasData: Float32Array,
+  ) {
     this.bindGroupLayout = device.createBindGroupLayout({
       entries: [
         {
@@ -21,7 +25,7 @@ export class NetworkLayer {
             type: 'read-only-storage',
           },
         },
-      ]
+      ],
     });
 
     this.weightBuffer = device.createBuffer({
@@ -61,5 +65,10 @@ export class NetworkLayer {
         },
       ],
     });
+  }
+
+  dispose() {
+    this.weightBuffer.destroy();
+    this.biasBuffer.destroy();
   }
 }
