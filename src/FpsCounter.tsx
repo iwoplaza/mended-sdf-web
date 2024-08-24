@@ -59,7 +59,11 @@ function getFPS() {
 function FPSCounter() {
   const fps = useSyncExternalStore(subscribe, getFPS);
 
-  return <p className="text-xl text-yellow-200 font-light">FPS: {fps}</p>;
+  return (
+    <p className="text-xl text-white font-light">
+      <span className="text-white/70">FPS:</span> {fps}
+    </p>
+  );
 }
 
 export default FPSCounter;

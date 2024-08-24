@@ -1,17 +1,21 @@
 import { Provider } from 'jotai';
 
+import { ControlsSidebar } from '@/components/ControlsSidebar';
+import { Statistics } from '@/components/Statistics';
 import GameViewport from './GameEngine/GameViewport';
-import DebugOptions from './DebugOptions/DebugOptions';
-import FPSCounter from './FpsCounter';
 import { store } from './store';
 
 function App() {
   return (
     <Provider store={store}>
-      <div className="bg-gray-600 min-h-screen">
-        <FPSCounter />
-        <GameViewport />
-        <DebugOptions />
+      <div className="flex bg-slate-200 min-h-screen">
+        <ControlsSidebar />
+        <div className="flex-1 flex justify-center items-center">
+          <div>
+            <Statistics />
+            <GameViewport />
+          </div>
+        </div>
       </div>
     </Provider>
   );
