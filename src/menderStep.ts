@@ -16,7 +16,7 @@ const SECOND_DEPTH = 8;
 type Options = {
   runtime: TypeGpuRuntime;
   gBuffer: GBuffer;
-  targetTexture: GPUTextureView;
+  targetTexture: () => GPUTextureView;
 };
 
 const rgbToYcbcrMatrix = wgsl.constant(`mat3x3f(
@@ -497,7 +497,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
         vertexCount: 6,
         colorAttachments: [
           {
-            view: targetTexture,
+            view: targetTexture(),
 
             clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
             loadOp: 'clear',

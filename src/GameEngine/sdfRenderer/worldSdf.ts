@@ -41,7 +41,7 @@ const objLeftBlob = wgsl.fn`(pos: vec3f) -> f32 {
 // }`.$name('obj_center_blob');
 
 const objCenterBlob = wgsl.fn`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(0., 0.7, -2.), 0.2);
+  return ${sdf.sphere}(pos, vec3(-0.3, 0.4, -2.), 0.2);
 }`.$name('obj_center_blob');
 
 const objRightBlob = wgsl.fn`(pos: vec3f) -> f32 {
@@ -108,7 +108,7 @@ export const worldMat =
   }
   else if (d_center_blob <= sd) {
     // test light
-    (*out).albedo = vec3f(1., 1., 1.) * 1.;
+    (*out).albedo = vec3f(1., 1., 1.) * 20.;
     (*out).emissive = true;
   }
   else if (d_right_blob <= sd) {

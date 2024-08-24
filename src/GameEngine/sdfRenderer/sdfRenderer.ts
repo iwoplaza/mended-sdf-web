@@ -23,6 +23,8 @@ import worldSdf, {
 import { ONES_3F } from '../wgslUtils/mathConstants';
 import { MAX_STEPS, MarchResult, march } from './marchSdf';
 import { convertRgbToY } from './colorUtils';
+import { atom } from 'jotai';
+import { store } from '@/store';
 
 // parameters
 const OutputFormat = wgsl.slot().$name('output_format');
@@ -38,6 +40,11 @@ const Reflection = struct({
   color: vec3f,
   roughness: f32,
 }).$name('reflection');
+
+export const accumulatedLayersAtom = atom(0);
+
+// How many layers (previous renders) are stacked on top of each other to reduce noise.
+const layersBuffer = wgsl.buffer(f32).$name('layers').$allowUniform();
 
 const marchWithSurfaceDist = march(surfaceDist).$name(
   'march_with_surface_dist',
@@ -173,6 +180,9 @@ const renderSubPixel = wgsl.fn`(coord: vec2f) -> vec3f {
 const mainComputeFn = wgsl.fn`(LocalInvocationID: vec3u, GlobalInvocationID: vec3u) {
   ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) * 10. + ${randomSeedPrimerUniform} * 1234.);
 
+  let prev_layers = ${layersBuffer.asUniform()};
+  let prev_render = textureLoad(input_tex, GlobalInvocationID.xy, 0);
+
   var acc = vec3f(0., 0., 0.);
   for (var sx = 0u; sx < ${SUPER_SAMPLES}; sx++) {
     for (var sy = 0u; sy < ${SUPER_SAMPLES}; sy++) {
@@ -191,7 +201,12 @@ const mainComputeFn = wgsl.fn`(LocalInvocationID: vec3u, GlobalInvocationID: vec
   let gamma = 2.2;
   acc = pow(acc, vec3(1.0 / gamma));
 
-  textureStore(output_tex, GlobalInvocationID.xy, vec4(acc, 1.0));
+  var new_render = vec4(acc, 1.0);
+  if (prev_layers > 0) {
+    new_render = (prev_render * prev_layers + vec4(acc, 1.0)) / (prev_layers + 1);
+  }
+
+  textureStore(output_tex, GlobalInvocationID.xy, new_render);
 }`.$name('main_compute');
 
 const auxComputeFn = wgsl.fn`(LocalInvocationID: vec3<u32>, GlobalInvocationID: vec3<u32>) {
@@ -262,6 +277,13 @@ export const SDFRenderer = async (
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
+        texture: {
+          sampleType: 'unfilterable-float',
+        },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
         storageTexture: {
           format: 'rgba8unorm',
         },
@@ -282,17 +304,6 @@ export const SDFRenderer = async (
     ],
   });
 
-  const mainBindGroup = runtime.device.createBindGroup({
-    label: `${LABEL} - Main Bind Group`,
-    layout: mainBindGroupLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: renderQuarter ? gBuffer.quarterView : gBuffer.rawRenderView,
-      },
-    ],
-  });
-
   const auxBindGroup = runtime.device.createBindGroup({
     label: `${LABEL} - Aux Bind Group`,
     layout: auxBindGroupLayout,
@@ -308,7 +319,8 @@ export const SDFRenderer = async (
     label: `${LABEL} - main`,
     workgroupSize: [blockDim, blockDim],
     code: wgsl`
-      ${wgsl.declare`@group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;`}
+      ${wgsl.declare`@group(0) @binding(0) var input_tex: texture_2d<f32>;`}
+      ${wgsl.declare`@group(0) @binding(1) var output_tex: texture_storage_2d<${OutputFormat}, write>;`}
       ${mainComputeFn}(${builtin.localInvocationId}, ${builtin.globalInvocationId});
     `
       // filling slots
@@ -342,7 +354,27 @@ export const SDFRenderer = async (
     perform() {
       runtime.writeBuffer(timeBuffer, Date.now() % 100000);
       runtime.writeBuffer(randomSeedPrimerBuffer, Math.random());
+      runtime.writeBuffer(layersBuffer, store.get(accumulatedLayersAtom));
       camera.update(runtime);
+
+      const mainBindGroup = runtime.device.createBindGroup({
+        label: `${LABEL} - Main Bind Group`,
+        layout: mainBindGroupLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: renderQuarter
+              ? gBuffer.inQuarterView
+              : gBuffer.inRawRenderView,
+          },
+          {
+            binding: 1,
+            resource: renderQuarter
+              ? gBuffer.outQuarterView
+              : gBuffer.outRawRenderView,
+          },
+        ],
+      });
 
       mainPipeline.execute({
         workgroups: [

@@ -1,12 +1,13 @@
 import { createRuntime } from 'typegpu';
+import type { SetStateAction } from 'jotai';
 import { store } from '../store';
 import { GBuffer } from '../gBuffer';
 import { MenderStep } from '../menderStep';
-import { displayModeAtom } from '../controlAtoms';
+import { autoRotateControlAtom, displayModeAtom } from '../controlAtoms';
 import { makeGBufferDebugger } from './gBufferDebugger';
 import { PostProcessingStep } from './postProcessingStep';
 import { ResampleStep } from './resampleStep/resampleCubicStep';
-import { SDFRenderer } from './sdfRenderer/sdfRenderer';
+import { accumulatedLayersAtom, SDFRenderer } from './sdfRenderer/sdfRenderer';
 import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
 
 class AlreadyDestroyedError extends Error {
@@ -24,6 +25,8 @@ export const GameEngine = (
 ) => {
   let destroyed = false;
   const cleanups: (() => unknown)[] = [];
+
+  store.set(accumulatedLayersAtom, 0 as SetStateAction<number>);
 
   const addCleanup = (cb: () => unknown) => {
     if (destroyed) {
@@ -62,7 +65,7 @@ export const GameEngine = (
     const upscaleStep = ResampleStep({
       runtime,
       targetFormat: 'rgba8unorm',
-      sourceTexture: gBuffer.quarterView,
+      sourceTexture: () => gBuffer.outQuarterView,
       targetTexture: gBuffer.upscaledView,
       sourceSize: gBuffer.quarterSize,
     });
@@ -70,7 +73,7 @@ export const GameEngine = (
     const menderStep = MenderStep({
       runtime,
       gBuffer,
-      targetTexture: gBuffer.rawRenderView,
+      targetTexture: () => gBuffer.outRawRenderView,
     });
 
     const gBufferDebugger = makeGBufferDebugger(
@@ -92,7 +95,7 @@ export const GameEngine = (
         runtime,
         context,
         presentationFormat,
-        textures: [gBuffer.upscaledView, gBuffer.rawRenderView],
+        textures: [() => gBuffer.upscaledView, () => gBuffer.outRawRenderView],
       });
     } catch (err) {
       console.error('Failed to init BlipDifferenceStep');
@@ -143,6 +146,15 @@ export const GameEngine = (
       }
 
       runtime.flush();
+      gBuffer.flip();
+      if (store.get(autoRotateControlAtom)) {
+        store.set(accumulatedLayersAtom, 0 as SetStateAction<number>);
+      } else {
+        store.set(
+          accumulatedLayersAtom,
+          (store.get(accumulatedLayersAtom) + 1) as SetStateAction<number>,
+        );
+      }
       requestAnimationFrame(frame);
     }
 

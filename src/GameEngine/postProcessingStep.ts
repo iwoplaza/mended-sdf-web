@@ -73,17 +73,6 @@ export const PostProcessingStep = ({
     externalLayouts: [externalBindGroupLayout],
   });
 
-  const externalBindGroup = runtime.device.createBindGroup({
-    label: 'Post Processing - Bind Group',
-    layout: externalBindGroupLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: gBuffer.rawRenderView,
-      },
-    ],
-  });
-
   runtime.writeBuffer(canvasSizeBuffer, gBuffer.size);
 
   return {
@@ -91,6 +80,17 @@ export const PostProcessingStep = ({
       // Updating color attachment
       const textureView = context.getCurrentTexture().createView();
       passColorAttachment.view = textureView;
+
+      const externalBindGroup = runtime.device.createBindGroup({
+        label: 'Post Processing - Bind Group',
+        layout: externalBindGroupLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: gBuffer.outRawRenderView,
+          },
+        ],
+      });
 
       pipeline.execute({
         vertexCount: 6,

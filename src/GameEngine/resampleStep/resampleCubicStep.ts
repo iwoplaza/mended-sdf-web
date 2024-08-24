@@ -90,7 +90,7 @@ const HGLookupTexture = (runtime: TypeGpuRuntime, samples = 128) => {
 type Options = {
   runtime: TypeGpuRuntime;
   targetFormat: GPUTextureFormat;
-  sourceTexture: GPUTextureView;
+  sourceTexture: () => GPUTextureView;
   targetTexture: GPUTextureView;
   sourceSize: [number, number];
 };
@@ -207,7 +207,7 @@ export const ResampleStep = ({
       },
       {
         binding: 2,
-        resource: sourceTexture,
+        resource: sourceTexture(),
       },
       {
         binding: 3,

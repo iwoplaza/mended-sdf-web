@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useAtom } from 'jotai';
+import { useAtom, useSetAtom } from 'jotai';
 import type { CheckedState } from '@radix-ui/react-checkbox';
 import { Card, CardContent, CardFooter, CardHeader } from './ui/card';
 import { Checkbox } from './ui/checkbox';
@@ -20,6 +20,7 @@ import {
   cameraOrientationControlAtom,
   targetResolutionAtom,
 } from '@/controlAtoms';
+import { accumulatedLayersAtom } from '@/GameEngine/sdfRenderer/sdfRenderer';
 
 function ControlLabel(props: { htmlFor: string; children: string }) {
   return (
@@ -33,12 +34,14 @@ function CameraOrientationControl() {
   const [cameraOrientation, setCameraOrientation] = useAtom(
     cameraOrientationControlAtom,
   );
+  const setAccumulatedLayers = useSetAtom(accumulatedLayersAtom);
 
   const onValueChange = useCallback(
     (values: number[]) => {
       setCameraOrientation(values[0]);
+      setAccumulatedLayers(0);
     },
-    [setCameraOrientation],
+    [setCameraOrientation, setAccumulatedLayers],
   );
 
   return (
@@ -84,12 +87,14 @@ function AutoRotateControl() {
 
 function DisplayModeControl() {
   const [displayMode, setDisplayMode] = useAtom(displayModeAtom);
+  const setAccumulatedLayers = useSetAtom(accumulatedLayersAtom);
 
   const onValueChange = useCallback(
     (value: string) => {
       setDisplayMode(value as DisplayMode);
+      setAccumulatedLayers(0);
     },
-    [setDisplayMode],
+    [setDisplayMode, setAccumulatedLayers],
   );
 
   return (
@@ -113,12 +118,14 @@ function DisplayModeControl() {
 
 function TargetResolutionControl() {
   const [targetResolution, setTargetResolution] = useAtom(targetResolutionAtom);
+  const setAccumulatedLayers = useSetAtom(accumulatedLayersAtom);
 
   const onValueChange = useCallback(
     (value: string) => {
       setTargetResolution(Number.parseInt(value));
+      setAccumulatedLayers(0);
     },
-    [setTargetResolution],
+    [setTargetResolution, setAccumulatedLayers],
   );
 
   return (

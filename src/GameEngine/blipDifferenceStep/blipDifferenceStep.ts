@@ -5,7 +5,7 @@ type Options = {
   runtime: TypeGpuRuntime;
   context: GPUCanvasContext;
   presentationFormat: GPUTextureFormat;
-  textures: [GPUTextureView, GPUTextureView];
+  textures: [() => GPUTextureView, () => GPUTextureView];
 };
 
 const fragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
@@ -81,26 +81,26 @@ export const BlipDifferenceStep = ({
     storeOp: 'store',
   };
 
-  const bindGroup = device.createBindGroup({
-    label: `${LABEL_BASE} - Bind Group`,
-    layout: externalBindGroupLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: textures[0],
-      },
-      {
-        binding: 1,
-        resource: textures[1],
-      },
-    ],
-  });
-
   return {
     perform() {
       // Updating color attachment
       const textureView = context.getCurrentTexture().createView();
       passColorAttachment.view = textureView;
+
+      const bindGroup = device.createBindGroup({
+        label: `${LABEL_BASE} - Bind Group`,
+        layout: externalBindGroupLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: textures[0](),
+          },
+          {
+            binding: 1,
+            resource: textures[1](),
+          },
+        ],
+      });
 
       pipeline.execute({
         vertexCount: 6,
