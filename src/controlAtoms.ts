@@ -9,6 +9,15 @@ export const DisplayModes = [
 
 export type DisplayMode = (typeof DisplayModes)[number]['key'];
 
+export const cameraOrientationControlAtom = atomWithStorage(
+  'CAMERA_ORIENTATION',
+  0,
+);
+
+export const autoRotateControlAtom = atomWithStorage('AUTO_ROTATE', true);
+
+export const targetResolutionAtom = atomWithStorage('TARGET_RESOLUTION', 256);
+
 export const displayModeAtom = atomWithStorage<DisplayMode>(
   'DISPLAY_MODE',
   'mended',

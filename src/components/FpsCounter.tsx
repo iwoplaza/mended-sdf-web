@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from 'react';
 
 class FPSCounterState {
-  _fps: number = 0;
+  _fps = 0;
   subs = new Set<() => unknown>();
 
-  constructor(interval: number = 1000) {
+  constructor(interval = 1000) {
     const times: number[] = [];
 
     const refreshLoop = () => {
@@ -32,9 +32,9 @@ class FPSCounterState {
   set fps(value: number) {
     this._fps = value;
 
-    this.subs.forEach((cb) => {
+    for (const cb of this.subs) {
       cb();
-    });
+    }
   }
 
   subscribe(callback: () => unknown) {

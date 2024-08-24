@@ -1,4 +1,4 @@
-import FPSCounter from '@/FpsCounter';
+import FPSCounter from './FpsCounter';
 
 export function Statistics() {
   return (

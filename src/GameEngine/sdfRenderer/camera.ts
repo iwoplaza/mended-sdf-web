@@ -2,6 +2,11 @@ import { mat4, vec3 } from 'wgpu-matrix';
 import { wgsl, type TypeGpuRuntime } from 'typegpu';
 import { mat4f, struct } from 'typegpu/data';
 import { RenderTargetHeight, RenderTargetWidth } from './worldSdf';
+import { store } from '@/store';
+import {
+  autoRotateControlAtom,
+  cameraOrientationControlAtom,
+} from '@/controlAtoms';
 
 export const CameraStruct = struct({
   view_matrix: mat4f,
@@ -40,7 +45,9 @@ export class Camera {
     // const upVector = vec3.fromValues(0, 1, 0);
 
     // const rad = 2.5;
-    const rad = Math.PI * (Date.now() / 5000);
+    const rad = store.get(autoRotateControlAtom)
+      ? Math.PI * (Date.now() / 5000)
+      : (store.get(cameraOrientationControlAtom) / 180) * Math.PI;
     const rotation = mat4.rotateY(mat4.translation(origin), rad);
     vec3.transformMat4(eyePosition, rotation, eyePosition);
 

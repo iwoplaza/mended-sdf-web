@@ -40,7 +40,7 @@ const objCenterBlob = wgsl.fn`(pos: vec3f) -> f32 {
 }`.$name('obj_center_blob');
 
 const objRightBlob = wgsl.fn`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(0.4, 0.2 + sin(${timeUniform} * 0.001) * 0.1, -2.), 0.4);
+  return ${sdf.sphere}(pos, vec3(0.4, 0.2, -2.), 0.4);
 }`;
 
 const objFloor = wgsl.fn`(pos: vec3f) -> f32 {

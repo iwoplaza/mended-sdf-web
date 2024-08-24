@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useAtom } from 'jotai';
+import type { CheckedState } from '@radix-ui/react-checkbox';
 import { Card, CardContent, CardFooter, CardHeader } from './ui/card';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
@@ -15,13 +16,69 @@ import {
   type DisplayMode,
   DisplayModes,
   displayModeAtom,
-} from '@/DebugOptions';
+  autoRotateControlAtom,
+  cameraOrientationControlAtom,
+  targetResolutionAtom,
+} from '@/controlAtoms';
 
 function ControlLabel(props: { htmlFor: string; children: string }) {
   return (
     <div className="min-h-[3rem] flex items-center">
       <Label htmlFor={props.htmlFor}>{props.children}</Label>
     </div>
+  );
+}
+
+function CameraOrientationControl() {
+  const [cameraOrientation, setCameraOrientation] = useAtom(
+    cameraOrientationControlAtom,
+  );
+
+  const onValueChange = useCallback(
+    (values: number[]) => {
+      setCameraOrientation(values[0]);
+    },
+    [setCameraOrientation],
+  );
+
+  return (
+    <>
+      <ControlLabel htmlFor="camera-orientation">
+        Camera orientation
+      </ControlLabel>
+      <Slider
+        value={[cameraOrientation]}
+        onValueChange={onValueChange}
+        className="justify-self-start"
+        id="camera-orientation"
+        max={360}
+      />
+    </>
+  );
+}
+
+function AutoRotateControl() {
+  const [autoRotateControl, setAutoRotateControl] = useAtom(
+    autoRotateControlAtom,
+  );
+
+  const onCheckedChange = useCallback(
+    (e: CheckedState) => {
+      setAutoRotateControl(e === true);
+    },
+    [setAutoRotateControl],
+  );
+
+  return (
+    <>
+      <ControlLabel htmlFor="auto-rotate-camera">Auto rotate</ControlLabel>
+      <Checkbox
+        checked={autoRotateControl}
+        onCheckedChange={onCheckedChange}
+        className="justify-self-start"
+        id="auto-rotate-camera"
+      />
+    </>
   );
 }
 
@@ -54,6 +111,33 @@ function DisplayModeControl() {
   );
 }
 
+function TargetResolutionControl() {
+  const [targetResolution, setTargetResolution] = useAtom(targetResolutionAtom);
+
+  const onValueChange = useCallback(
+    (value: string) => {
+      setTargetResolution(Number.parseInt(value));
+    },
+    [setTargetResolution],
+  );
+
+  return (
+    <>
+      <ControlLabel htmlFor="target-resolution">Target resolution</ControlLabel>
+      <Select value={String(targetResolution)} onValueChange={onValueChange}>
+        <SelectTrigger className="w-[180px]" id="target-resolution">
+          <SelectValue placeholder="Target resolution" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={'256'}>256x256</SelectItem>
+          <SelectItem value={'512'}>512x512</SelectItem>
+          <SelectItem value={'1024'}>1024x1024</SelectItem>
+        </SelectContent>
+      </Select>
+    </>
+  );
+}
+
 export function ControlsSidebar() {
   return (
     <Card className="m-4 flex flex-col">
@@ -62,15 +146,10 @@ export function ControlsSidebar() {
       </CardHeader>
       <CardContent className="grow">
         <div className="grid grid-cols-[1fr,auto] gap-y-2 gap-x-4 justify-items-end place-items-center">
-          <ControlLabel htmlFor="camera-orientation">
-            Camera orientation
-          </ControlLabel>
-          <Slider className="justify-self-start" id="camera-orientation" />
-
-          <ControlLabel htmlFor="auto-rotate-camera">Auto rotate</ControlLabel>
-          <Checkbox className="justify-self-start" id="auto-rotate-camera" />
-
+          <CameraOrientationControl />
+          <AutoRotateControl />
           <DisplayModeControl />
+          <TargetResolutionControl />
         </div>
       </CardContent>
       <CardFooter className="grow-0 shrink">© Iwo Plaza 2024.</CardFooter>
