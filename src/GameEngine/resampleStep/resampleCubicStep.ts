@@ -1,4 +1,3 @@
-import { BufferWriter } from 'typed-binary';
 import { wgsl, type TypeGpuRuntime } from 'typegpu';
 import { struct, vec2i, vec2f, vec4f } from 'typegpu/data';
 
@@ -44,14 +43,8 @@ const resampleCubic = wgsl.fn`(uv: vec2f) -> vec4f {
   
   return tex_source00;
   // Doing linear interpolation for now.
-  // return textureSample(texture, clamping_smplr, uv);
+  return textureSample(texture, clamping_smplr, uv);
 }`;
-
-const CanvasSchema = struct({
-  size: vec2i,
-  e_x: vec2f, // texel size in x direction
-  e_y: vec2f, // texel size in y direction
-});
 
 /**
  * Lookup texture of `h` and `g` functions defined in https://developer.nvidia.com/gpugems/gpugems2/part-iii-high-quality-rendering/chapter-20-fast-third-order-texture-filtering.
@@ -239,17 +232,6 @@ export const ResampleStep = ({
     e_y: [0, 1 / sourceSize[1]] as [number, number],
   };
 
-  const canvasBuffer = runtime.device.createBuffer({
-    size: CanvasSchema.measure(canvas).size,
-    usage: GPUBufferUsage.UNIFORM,
-    mappedAtCreation: true,
-  });
-  {
-    const writer = new BufferWriter(canvasBuffer.getMappedRange());
-    CanvasSchema.write(writer, canvas);
-    canvasBuffer.unmap();
-  }
-
   const externalBindGroup = runtime.device.createBindGroup({
     layout: externalBindGroupLayout,
     entries: [
@@ -274,6 +256,7 @@ export const ResampleStep = ({
 
   return {
     perform() {
+      runtime.writeBuffer(canvasBuffer, canvas);
       pipeline.execute({
         vertexCount: 6,
         colorAttachments: [passColorAttachment],
