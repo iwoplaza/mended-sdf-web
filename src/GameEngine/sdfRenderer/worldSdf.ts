@@ -35,6 +35,11 @@ const objLeftBlob = wgsl.fn`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(-0.3, -0.2, -2.), 0.2);
 }`.$name('obj_left_blob');
 
+// ANIMATED LIGHT
+// const objCenterBlob = wgsl.fn`(pos: vec3f) -> f32 {
+//   return ${sdf.sphere}(pos, vec3(-0.3, 0.7 + sin(${timeUniform} * 0.001) * 0.4, -2.), 0.2);
+// }`.$name('obj_center_blob');
+
 const objCenterBlob = wgsl.fn`(pos: vec3f) -> f32 {
   return ${sdf.sphere}(pos, vec3(0., 0.7, -2.), 0.2);
 }`.$name('obj_center_blob');
