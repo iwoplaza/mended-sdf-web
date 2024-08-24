@@ -1,4 +1,5 @@
 import {
+  builtin,
   type TypeGpuRuntime,
   wgsl,
   type WgslBuffer,
@@ -22,11 +23,11 @@ const BlockSize = 8;
 
 const coneMinDistVar = wgsl.var(f32, 0);
 
-const coneDist = wgsl.fn()`(ctx: ${ShapeContext} -> f32 {
+const coneDist = wgsl.fn`(ctx: ${ShapeContext} -> f32 {
   return ${coneMinDistVar} * ctx.ray_distance;
 }`.$name('cone_dist');
 
-const marchWithCone = wgsl.fn()`(ctx: ptr<function, ShapeContext>, limit: u32) {
+const marchWithCone = wgsl.fn`(ctx: ptr<function, ShapeContext>, limit: u32) {
   let dir = (*ctx).ray_dir;
   let start_pos = (*ctx).ray_pos;
   
@@ -70,7 +71,7 @@ const resolution2Buffer = wgsl.buffer(vec2f).$allowUniform();
 
 // const MAX_STEPS = 100;
 
-const mainComputeFn = wgsl.fn()`(GlobalInvocationID: vec3u) {
+const mainComputeFn = wgsl.fn`(GlobalInvocationID: vec3u) {
   let offset = vec2f(
     0.5,
     0.5
@@ -102,10 +103,10 @@ const mainComputeFn = wgsl.fn()`(GlobalInvocationID: vec3u) {
 export interface CBuffer {
   readonly modulo: number;
 
-  depth16BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable_storage'>>;
-  depth8BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable_storage'>>;
-  depth4BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable_storage'>>;
-  depth2BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable_storage'>>;
+  depth16BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable'>>;
+  depth8BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable'>>;
+  depth4BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable'>>;
+  depth2BufferPlum: WgslPlum<WgslBuffer<WgslArray<F32>, 'mutable'>>;
 
   depth16SizePlum: WgslPlum<[number, number]>;
   depth8SizePlum: WgslPlum<[number, number]>;
@@ -176,7 +177,7 @@ export const makeCBuffer = (
 
       return wgsl
         .buffer(arrayOf(f32, res[0] * res[1]))
-        .$allowMutableStorage()
+        .$allowMutable()
         .$name('1/16 depth buffer');
     }),
 
@@ -185,7 +186,7 @@ export const makeCBuffer = (
 
       return wgsl
         .buffer(arrayOf(f32, res[0] * res[1]))
-        .$allowMutableStorage()
+        .$allowMutable()
         .$name('1/8 depth buffer');
     }),
 
@@ -194,7 +195,7 @@ export const makeCBuffer = (
 
       return wgsl
         .buffer(arrayOf(f32, res[0] * res[1]))
-        .$allowMutableStorage()
+        .$allowMutable()
         .$name('1/4 depth buffer');
     }),
 
@@ -203,7 +204,7 @@ export const makeCBuffer = (
 
       return wgsl
         .buffer(arrayOf(f32, res[0] * res[1]))
-        .$allowMutableStorage()
+        .$allowMutable()
         .$name('1/2 depth buffer');
     }),
   };
@@ -219,17 +220,16 @@ const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
   const cone16Program = wgsl.plum((get) => {
     return runtime.makeComputePipeline({
       label: 'Cone Tracer - 1/16 pipeline',
-      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
       workgroupSize: [BlockSize, BlockSize],
       code: wgsl`
-        ${mainComputeFn}(GlobalInvocationID);
+        ${mainComputeFn}(${builtin.globalInvocationId});
       `
         // filling slots
         .with(isFirstStep, 'true')
         .with(inputBufferSizePlaceholder, depth2SizeBuffer.asUniform())
         .with(outputBufferSizePlaceholder, depth16SizeBuffer.asUniform())
-        .with(inputBufferPlaceholder, get(cBuffer.depth2BufferPlum).asStorage())
-        .with(outputBufferSlot, get(cBuffer.depth16BufferPlum).asStorage())
+        .with(inputBufferPlaceholder, get(cBuffer.depth2BufferPlum).asMutable())
+        .with(outputBufferSlot, get(cBuffer.depth16BufferPlum).asMutable())
         .with(renderTargetSizeSlot, resolution16Buffer.asUniform()),
     });
   });
@@ -237,10 +237,9 @@ const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
   const cone8Program = wgsl.plum((get) => {
     return runtime.makeComputePipeline({
       label: 'Cone Tracer - 1/8 pipeline',
-      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
       workgroupSize: [BlockSize, BlockSize],
       code: wgsl`
-        ${mainComputeFn}(GlobalInvocationID);
+        ${mainComputeFn}(${builtin.globalInvocationId});
       `
         // filling slots
         .with(isFirstStep, 'false')
@@ -248,9 +247,9 @@ const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
         .with(outputBufferSizePlaceholder, depth8SizeBuffer.asUniform())
         .with(
           inputBufferPlaceholder,
-          get(cBuffer.depth16BufferPlum).asStorage(),
+          get(cBuffer.depth16BufferPlum).asMutable(),
         )
-        .with(outputBufferSlot, get(cBuffer.depth8BufferPlum).asStorage())
+        .with(outputBufferSlot, get(cBuffer.depth8BufferPlum).asMutable())
         .with(renderTargetSizeSlot, resolution8Buffer.asUniform()),
     });
   });
@@ -258,17 +257,16 @@ const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
   const cone4Program = wgsl.plum((get) => {
     return runtime.makeComputePipeline({
       label: 'Cone Tracer - 1/4 pipeline',
-      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
       workgroupSize: [BlockSize, BlockSize],
       code: wgsl`
-        ${mainComputeFn}(GlobalInvocationID);
+        ${mainComputeFn}(${builtin.globalInvocationId});
       `
         // filling slots
         .with(isFirstStep, 'false')
         .with(inputBufferSizePlaceholder, depth8SizeBuffer.asUniform())
         .with(outputBufferSizePlaceholder, depth4SizeBuffer.asUniform())
-        .with(inputBufferPlaceholder, get(cBuffer.depth8BufferPlum).asStorage())
-        .with(outputBufferSlot, get(cBuffer.depth4BufferPlum).asStorage())
+        .with(inputBufferPlaceholder, get(cBuffer.depth8BufferPlum).asMutable())
+        .with(outputBufferSlot, get(cBuffer.depth4BufferPlum).asMutable())
         .with(renderTargetSizeSlot, resolution4Buffer.asUniform()),
     });
   });
@@ -276,17 +274,16 @@ const ConeTracer = ({ runtime, cBuffer }: ConeTracerOptions) => {
   const cone2Program = wgsl.plum((get) => {
     return runtime.makeComputePipeline({
       label: 'Cone Tracer - 1/2 pipeline',
-      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3u'],
       workgroupSize: [BlockSize, BlockSize],
       code: wgsl`
-        ${mainComputeFn}(GlobalInvocationID);
+        ${mainComputeFn}(${builtin.globalInvocationId});
       `
         // filling slots
         .with(isFirstStep, false)
         .with(inputBufferSizePlaceholder, depth4SizeBuffer.asUniform())
         .with(outputBufferSizePlaceholder, depth2SizeBuffer.asUniform())
-        .with(inputBufferPlaceholder, get(cBuffer.depth4BufferPlum).asStorage())
-        .with(outputBufferSlot, get(cBuffer.depth2BufferPlum).asStorage())
+        .with(inputBufferPlaceholder, get(cBuffer.depth4BufferPlum).asMutable())
+        .with(outputBufferSlot, get(cBuffer.depth2BufferPlum).asMutable())
         .with(renderTargetSizeSlot, resolution2Buffer.asUniform()),
     });
   });

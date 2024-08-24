@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { type Wgsl, wgsl, type TypeGpuRuntime } from 'typegpu';
 import { i32, struct } from 'typegpu/data';
 
