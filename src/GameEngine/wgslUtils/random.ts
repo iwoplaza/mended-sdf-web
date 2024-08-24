@@ -36,17 +36,21 @@ export const randInCircle = wgsl.fn`() -> vec2f {
   );
 }`.$name('rand_in_circle');
 
-export const randOnSphere = wgsl.fn`() -> vec3f {
-  let z = 2. * ${rand01}() - 1.;
-  let theta = ${TWO_PI} * ${rand01}() - ${PI};
-  let x = sin(theta) * sqrt(1. - z*z);
-  let y = cos(theta) * sqrt(1. - z*z);
-  return vec3f(x, y, z);
-}`.$name('rand_on_sphere');
+export const randOnSphere = wgsl.fn`
+  () -> vec3f {
+    let z = 2. * ${rand01}() - 1.;
+    let theta = ${TWO_PI} * ${rand01}() - ${PI};
+    let x = sin(theta) * sqrt(1. - z*z);
+    let y = cos(theta) * sqrt(1. - z*z);
+    return vec3f(x, y, z);
+  }
+`.$name('rand_on_sphere');
 
-export const randOnHemisphere = wgsl.fn`(normal: vec3f) -> vec3f {
-  let value = ${randOnSphere}();
-  let alignment = dot(normal, value);
+export const randOnHemisphere = wgsl.fn`
+  (normal: vec3f) -> vec3f {
+    let value = ${randOnSphere}();
+    let alignment = dot(normal, value);
 
-  return sign(alignment) * value;
-}`;
+    return sign(alignment) * value;
+  }
+`;

@@ -3,3 +3,4 @@
 TODO:
 
 - [ ] Consider adding `benny` for benchmarking.
+- [ ] Investigate padding during convolution.
