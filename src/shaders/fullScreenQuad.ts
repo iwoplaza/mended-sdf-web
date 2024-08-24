@@ -1,14 +1,7 @@
-import { wgsl } from 'typegpu';
-import { struct, vec2f, vec4f } from 'typegpu/data';
-
-const VertexOutput = struct({
-  '@builtin(position) position': vec4f,
-  '@location(0) uv': vec2f,
-}).$name('vertex_output');
+import { builtin, wgsl } from 'typegpu';
+import { vec2f } from 'typegpu/data/index';
 
 export const fullScreenQuadVertexShader = {
-  args: ['@builtin(vertex_index) vertexIndex: u32'],
-  output: VertexOutput,
   code: wgsl`
     const SCREEN_RECT = array<vec2f, 6>(
       vec2f(-1.0, -1.0),
@@ -30,9 +23,11 @@ export const fullScreenQuadVertexShader = {
       vec2f(1.0, 0.0),
     );
 
-    var output: ${VertexOutput};
-    output.position = vec4(SCREEN_RECT[vertexIndex], 0.0, 1.0);
-    output.uv = UVS[vertexIndex];
-    return output;
+    let out_pos = vec4(SCREEN_RECT[${builtin.vertexIndex}], 0.0, 1.0);
+    let vUV: vec2f = UVS[${builtin.vertexIndex}];
   `,
+  output: {
+    [builtin.position]: 'out_pos',
+    vUV: vec2f,
+  },
 };

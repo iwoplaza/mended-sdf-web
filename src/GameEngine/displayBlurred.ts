@@ -73,7 +73,7 @@ const mainFragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   return result;
 }`;
 
-export function makeGBufferDebugger(
+export function makeDisplayBlurred(
   runtime: TypeGpuRuntime,
   presentationFormat: GPUTextureFormat,
   gBuffer: GBuffer,

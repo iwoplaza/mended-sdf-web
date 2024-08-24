@@ -1,4 +1,4 @@
-import { wgsl, type TypeGpuRuntime } from 'typegpu';
+import { builtin, wgsl, type TypeGpuRuntime } from 'typegpu';
 import { f32, struct, vec3f } from 'typegpu/data';
 import type { GBuffer } from '../../gBuffer';
 import {
@@ -170,10 +170,6 @@ const renderSubPixel = wgsl.fn`(coord: vec2f) -> vec3f {
   return acc;
 }`.$name('render_sub_pixel');
 
-const externalDeclarations = (outputFormat: string) => [
-  wgsl`@group(0) @binding(0) var output_tex: texture_storage_2d<${outputFormat}, write>;`,
-];
-
 const mainComputeFn = wgsl.fn`(LocalInvocationID: vec3u, GlobalInvocationID: vec3u) {
   ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) * 10. + ${randomSeedPrimerUniform} * 1234.);
 
@@ -311,12 +307,9 @@ export const SDFRenderer = async (
   const mainPipeline = runtime.makeComputePipeline({
     label: `${LABEL} - main`,
     workgroupSize: [blockDim, blockDim],
-    args: [
-      '@builtin(local_invocation_id) LocalInvocationID: vec3<u32>',
-      '@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>',
-    ],
     code: wgsl`
-      ${mainComputeFn}(LocalInvocationID, GlobalInvocationID);
+      ${wgsl.declare`@group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;`}
+      ${mainComputeFn}(${builtin.localInvocationId}, ${builtin.globalInvocationId});
     `
       // filling slots
       .with(OutputFormat, 'rgba8unorm')
@@ -326,18 +319,14 @@ export const SDFRenderer = async (
       .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
     // ---
     externalLayouts: [mainBindGroupLayout],
-    externalDeclarations: externalDeclarations('rgba8unorm'),
   });
 
   const auxPipeline = runtime.makeComputePipeline({
     label: `${LABEL} - aux`,
     workgroupSize: [blockDim, blockDim],
-    args: [
-      '@builtin(local_invocation_id) LocalInvocationID: vec3<u32>',
-      '@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>',
-    ],
     code: wgsl`
-      ${auxComputeFn}(LocalInvocationID, GlobalInvocationID);
+      ${wgsl.declare`@group(0) @binding(0) var output_tex: texture_storage_2d<${OutputFormat}, write>;`}
+      ${auxComputeFn}(${builtin.localInvocationId}, ${builtin.globalInvocationId});
     `
       // filling slots
       .with(OutputFormat, 'rgba16float')
@@ -347,7 +336,6 @@ export const SDFRenderer = async (
       .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
     // ---
     externalLayouts: [auxBindGroupLayout],
-    externalDeclarations: externalDeclarations('rgba16float'),
   });
 
   return {

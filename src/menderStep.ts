@@ -1,5 +1,5 @@
 import { vec2f } from 'typegpu/data/index';
-import { type Wgsl, wgsl, type TypeGpuRuntime } from 'typegpu';
+import { type Wgsl, wgsl, type TypeGpuRuntime, builtin } from 'typegpu';
 
 import { Model7 } from './model7';
 import type { GBuffer } from './gBuffer';
@@ -154,11 +154,6 @@ const convolveMainFn = wgsl.fn`(coord: vec3<u32>) {
   }
 }`;
 
-const combineExternalDeclarations = [
-  wgsl`@group(0) @binding(0) var blurred_texture: texture_2d<f32>;`,
-  wgsl`@group(0) @binding(1) var<storage, read> mendedBuffer: array<f32>;`,
-];
-
 const combineFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   var coord = vec2u(floor(coord_f.xy));
 
@@ -273,7 +268,6 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
   }) => {
     const pipeline = runtime.makeComputePipeline({
       workgroupSize: [BLOCK_SIZE, BLOCK_SIZE],
-      args: ['@builtin(global_invocation_id) GlobalInvocationID: vec3<u32>'],
       code: wgsl`
         ${wgsl.declare`@group(0) @binding(0) var<storage, read_write> output_buffer: array<f32>;`}
         ${wgsl.declare`@group(0) @binding(1) var<storage, read> input_buffer: array<vec4f>;`}
@@ -288,7 +282,7 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
           var<workgroup> tile: array<array<array<vec4f, ${inChannelsSlot} / 4>, ${BLOCK_SIZE} + ${TILE_PADDING} * 2>, ${BLOCK_SIZE} + ${TILE_PADDING} * 2>;
         `}
 
-        ${convolveMainFn}(GlobalInvocationID);
+        ${convolveMainFn}(${builtin.globalInvocationId});
       `
         // filling slots
         .with(kernelRadiusSlot, options.kernelRadius)
@@ -454,15 +448,16 @@ export const MenderStep = ({ runtime, gBuffer, targetTexture }: Options) => {
     label: 'Combination Pipeline',
     vertex: fullScreenQuadVertexShader,
     fragment: {
-      args: ['@builtin(position) coord_f: vec4f'],
       code: wgsl`
+        ${wgsl.declare`@group(0) @binding(0) var blurred_texture: texture_2d<f32>;`}
+        ${wgsl.declare`@group(0) @binding(1) var<storage, read> mendedBuffer: array<f32>;`}
+
+        let coord_f = ${builtin.position};
         return ${combineFn}(coord_f);
       `,
-      output: '@location(0) vec4f',
       target: [{ format: 'rgba8unorm' }],
     },
     primitive: { topology: 'triangle-list' },
-    externalDeclarations: combineExternalDeclarations,
     externalLayouts: [combinationBindGroupLayout],
   });
 

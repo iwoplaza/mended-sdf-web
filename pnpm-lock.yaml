@@ -51,8 +51,8 @@ importers:
         specifier: ^4.0.1
         version: 4.0.1
       typegpu:
-        specifier: link:../wigsill-stable/packages/typegpu
-        version: link:../wigsill-stable/packages/typegpu
+        specifier: 0.0.0-alpha.4
+        version: 0.0.0-alpha.4(typed-binary@4.0.1)
       wgpu-matrix:
         specifier: ^2.4.2
         version: 2.4.2
@@ -2207,6 +2207,12 @@ packages:
 
   typed-binary@4.0.1:
     resolution: {integrity: sha512-nne2iMvXX8Qi3KI7do55udYsPNIUr7zFhPJNdWpujkWUzr6sJK6gQjCUcZGMM6+lws75oiFtGk8if6S2KgWppg==}
+
+  typegpu@0.0.0-alpha.4:
+    resolution: {integrity: sha512-2YSSQLrJ2Xws8k5CyrSwserlAcf9dvlk2pXmy8skmKPYBdRiM63IX8yzctZpAUGvvrsHMLy1vkqmTqQGQRiluQ==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      typed-binary: ^4.0.1
 
   typescript@5.1.6:
     resolution: {integrity: sha512-zaWCozRZ6DLEWAWFrVDz1H6FVXzUSfTy5FUMWsQlU8Ym5JP9eO4xkTIROFCQvhQf61z6O/G6ugw3SgAnvvm+HA==}
@@ -4421,6 +4427,10 @@ snapshots:
       is-typed-array: 1.1.10
 
   typed-binary@4.0.1: {}
+
+  typegpu@0.0.0-alpha.4(typed-binary@4.0.1):
+    dependencies:
+      typed-binary: 4.0.1
 
   typescript@5.1.6: {}
 

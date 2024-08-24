@@ -1,5 +1,6 @@
+import { fullScreenQuadVertexShader } from '@/shaders/fullScreenQuad';
 import { wgsl, type TypeGpuRuntime } from 'typegpu';
-import { struct, vec2i, vec2f, vec4f } from 'typegpu/data';
+import { struct, vec2i, vec2f } from 'typegpu/data';
 
 const Canvas = struct({
   size: vec2i,
@@ -9,13 +10,6 @@ const Canvas = struct({
 
 const canvasBuffer = wgsl.buffer(Canvas).$name('canvas').$allowUniform();
 const canvasUniform = canvasBuffer.asUniform();
-
-const externalDeclarations = [
-  wgsl`@group(0) @binding(0) var smplr: sampler;`,
-  wgsl`@group(0) @binding(1) var clamping_smplr: sampler;`,
-  wgsl`@group(0) @binding(2) var texture: texture_2d<f32>; // source texture`,
-  wgsl`@group(0) @binding(3) var tex_hg: texture_1d<f32>;  // filter offsets and weights`,
-];
 
 /**
  * Implementation based on:
@@ -43,7 +37,7 @@ const resampleCubic = wgsl.fn`(uv: vec2f) -> vec4f {
   
   return tex_source00;
   // Doing linear interpolation for now.
-  return textureSample(texture, clamping_smplr, uv);
+  // return textureSample(texture, clamping_smplr, uv);
 }`;
 
 /**
@@ -168,53 +162,21 @@ export const ResampleStep = ({
     addressModeW: 'clamp-to-edge',
   });
 
-  const VertexOutput = struct({
-    '@builtin(position) position': vec4f,
-    '@location(0) uv': vec2f,
-  }).$name('vertex_output');
-
   const pipeline = runtime.makeRenderPipeline({
     label: 'Resample Pipeline',
     primitive: { topology: 'triangle-list' },
-    vertex: {
-      args: ['@builtin(vertex_index) vertex_index: u32'],
-      output: VertexOutput,
-      code: wgsl`
-        let SCREEN_RECT = array<vec2f, 6>(
-          vec2f(-1.0, -1.0),
-          vec2f(1.0, -1.0),
-          vec2f(-1.0, 1.0),
-        
-          vec2f(1.0, -1.0),
-          vec2f(-1.0, 1.0),
-          vec2f(1.0, 1.0),
-        );
-        
-        let UVS = array<vec2f, 6>(
-          vec2f(0.0, 1.0),
-          vec2f(1.0, 1.0),
-          vec2f(0.0, 0.0),
-        
-          vec2f(1.0, 1.0),
-          vec2f(0.0, 0.0),
-          vec2f(1.0, 0.0),
-        );
-
-        var output: ${VertexOutput};
-        output.position = vec4(SCREEN_RECT[vertex_index], 0.0, 1.0);
-        output.uv = UVS[vertex_index];
-        return output;
-      `,
-    },
+    vertex: fullScreenQuadVertexShader,
     fragment: {
-      args: ['@location(0) uv: vec2f'],
       code: wgsl`
-        return ${resampleCubic}(uv);
+        ${wgsl.declare`@group(0) @binding(0) var smplr: sampler;`}
+        ${wgsl.declare`@group(0) @binding(1) var clamping_smplr: sampler;`}
+        ${wgsl.declare`@group(0) @binding(2) var texture: texture_2d<f32>; // source texture`}
+        ${wgsl.declare`@group(0) @binding(3) var tex_hg: texture_1d<f32>;  // filter offsets and weights`}
+
+        return ${resampleCubic}(vUV);
       `,
-      output: '@location(0) vec4f',
       target: [{ format: targetFormat }],
     },
-    externalDeclarations,
     externalLayouts: [externalBindGroupLayout],
   });
 

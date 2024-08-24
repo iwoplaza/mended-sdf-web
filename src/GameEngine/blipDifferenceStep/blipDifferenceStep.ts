@@ -1,4 +1,4 @@
-import { wgsl, type TypeGpuRuntime } from 'typegpu';
+import { builtin, wgsl, type TypeGpuRuntime } from 'typegpu';
 import { fullScreenQuadVertexShader } from '../../shaders/fullScreenQuad';
 
 type Options = {
@@ -7,11 +7,6 @@ type Options = {
   presentationFormat: GPUTextureFormat;
   textures: [GPUTextureView, GPUTextureView];
 };
-
-const externalDeclarations = [
-  '@group(0) @binding(0) var texture_a: texture_2d<f32>;',
-  '@group(0) @binding(1) var texture_b: texture_2d<f32>;',
-];
 
 const fragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   var coord = vec2u(floor(coord_f.xy));
@@ -64,15 +59,16 @@ export const BlipDifferenceStep = ({
     label: `${LABEL_BASE} - Pipeline`,
     vertex: fullScreenQuadVertexShader,
     fragment: {
-      args: ['@builtin(position) coord_f: vec4f'],
       code: wgsl`
+        ${wgsl.declare`@group(0) @binding(0) var texture_a: texture_2d<f32>;`}
+        ${wgsl.declare`@group(0) @binding(1) var texture_b: texture_2d<f32>;`}
+
+        let coord_f = ${builtin.position};
         return ${fragFn}(coord_f);
       `,
-      output: '@location(0) vec4f',
       target: [{ format: presentationFormat }],
     },
     primitive: { topology: 'triangle-list' },
-    externalDeclarations,
     externalLayouts: [externalBindGroupLayout],
   });
 

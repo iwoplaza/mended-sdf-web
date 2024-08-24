@@ -1,5 +1,5 @@
 import { vec2f } from 'typegpu/data';
-import { wgsl, type TypeGpuRuntime } from 'typegpu';
+import { builtin, wgsl, type TypeGpuRuntime } from 'typegpu';
 
 import type { GBuffer } from '../gBuffer';
 import { fullScreenQuadVertexShader } from '../shaders/fullScreenQuad';
@@ -15,10 +15,6 @@ const canvasSizeBuffer = wgsl
   .buffer(vec2f)
   .$name('canvas_size')
   .$allowUniform();
-
-const externalDeclarations = [
-  wgsl`@group(0) @binding(0) var sourceTexture: texture_2d<f32>;`,
-];
 
 const mainFragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   var coord = vec2u(floor(coord_f.xy));
@@ -65,15 +61,15 @@ export const PostProcessingStep = ({
     label: 'Pos Processing Pipeline',
     vertex: fullScreenQuadVertexShader,
     fragment: {
-      args: ['@builtin(position) coord_f: vec4f'],
       code: wgsl`
+        ${wgsl.declare`@group(0) @binding(0) var sourceTexture: texture_2d<f32>;`}
+
+        let coord_f = ${builtin.position};
         return ${mainFragFn}(coord_f);
       `,
-      output: '@location(0) vec4f',
       target: [{ format: presentationFormat }],
     },
     primitive: { topology: 'triangle-list' },
-    externalDeclarations,
     externalLayouts: [externalBindGroupLayout],
   });
 
