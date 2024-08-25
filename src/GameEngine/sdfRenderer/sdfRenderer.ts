@@ -1,3 +1,4 @@
+import { atom } from 'jotai';
 import { builtin, wgsl, type TypeGpuRuntime } from 'typegpu';
 import { f32, struct, vec3f } from 'typegpu/data';
 import type { GBuffer } from '../../gBuffer';
@@ -23,15 +24,13 @@ import worldSdf, {
 import { ONES_3F } from '../wgslUtils/mathConstants';
 import { MAX_STEPS, MarchResult, march } from './marchSdf';
 import { convertRgbToY } from './colorUtils';
-import { atom } from 'jotai';
 import { store } from '@/store';
 
 // parameters
 const OutputFormat = wgsl.slot().$name('output_format');
 const BlockSize = wgsl.slot().$name('block_size');
-const WhiteNoiseBufferSize = wgsl.slot().$name('white_noise_buffer_size');
 
-const SUPER_SAMPLES = 2;
+const SUPER_SAMPLES = 4;
 const ONE_OVER_SUPER_SAMPLES = 1 / SUPER_SAMPLES;
 const SUB_SAMPLES = 16;
 const MAX_REFL = 3;
@@ -71,7 +70,7 @@ const reflect = wgsl.fn`(ray_dir: vec3f, normal: vec3f, mat_roughness: f32, out_
 }`.$name('reflect');
 
 const worldNormals = wgsl.fn`(point: vec3f, ctx: ${ShapeContext}) -> vec3f {
-  let epsilon = ${surfaceDist}(ctx) * 0.1; // arbitrary - should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
+  let epsilon = ${surfaceDist}(ctx) * 0.5; // arbitrary - should be smaller than any surface detail in your distance function, but not so small as to get lost in float precision
   let offX = vec3f(point.x + epsilon, point.y, point.z);
   let offY = vec3f(point.x, point.y + epsilon, point.z);
   let offZ = vec3f(point.x, point.y, point.z + epsilon);
@@ -103,7 +102,7 @@ const renderSubPixel = wgsl.fn`(coord: vec2f) -> vec3f {
     return min(${skyColor}(init_shape_ctx.ray_dir), ${ONES_3F});
   }
 
-  var normal = ${worldNormals}(init_march_result.position, init_shape_ctx);
+  let init_normal = ${worldNormals}(init_march_result.position, init_shape_ctx);
 
   var init_material: ${Material};
   ${worldMat}(init_march_result.position, init_shape_ctx, &init_material);
@@ -117,6 +116,7 @@ const renderSubPixel = wgsl.fn`(coord: vec2f) -> vec3f {
   var acc = vec3f(0., 0., 0.);
   for (var sub = 0u; sub < ${SUB_SAMPLES}; sub++) {
     var material: ${Material} = init_material;
+    var normal = init_normal;
 
     var emissive_color = vec3f(0., 0., 0.);
     var refl_count = 0u;
@@ -178,7 +178,7 @@ const renderSubPixel = wgsl.fn`(coord: vec2f) -> vec3f {
 }`.$name('render_sub_pixel');
 
 const mainComputeFn = wgsl.fn`(LocalInvocationID: vec3u, GlobalInvocationID: vec3u) {
-  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) * 10. + ${randomSeedPrimerUniform} * 1234.);
+  ${setupRandomSeed}(vec2f(GlobalInvocationID.xy) * ${Math.random()} + ${randomSeedPrimerUniform} * ${Math.random()});
 
   let prev_layers = ${layersBuffer.asUniform()};
   let prev_render = textureLoad(input_tex, GlobalInvocationID.xy, 0);
@@ -243,6 +243,7 @@ const auxComputeFn = wgsl.fn`(LocalInvocationID: vec3<u32>, GlobalInvocationID: 
   var albedo_luminance = ${convertRgbToY}(mat_color);
   var emission_luminance = 0.;
   if (material.emissive) {
+    albedo_luminance = 0.3;
     emission_luminance = albedo_luminance;
   }
 
@@ -266,7 +267,6 @@ export const SDFRenderer = async (
 ) => {
   const LABEL = 'SDF Renderer';
   const blockDim = 8;
-  const whiteNoiseBufferSize = 512 * 512;
   const mainPassSize = renderQuarter ? gBuffer.quarterSize : gBuffer.size;
 
   const camera = new Camera();
@@ -327,8 +327,7 @@ export const SDFRenderer = async (
       .with(OutputFormat, 'rgba8unorm')
       .with(RenderTargetWidth, mainPassSize[0])
       .with(RenderTargetHeight, mainPassSize[1])
-      .with(BlockSize, blockDim)
-      .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
+      .with(BlockSize, blockDim),
     // ---
     externalLayouts: [mainBindGroupLayout],
   });
@@ -344,8 +343,7 @@ export const SDFRenderer = async (
       .with(OutputFormat, 'rgba16float')
       .with(RenderTargetWidth, gBuffer.size[0])
       .with(RenderTargetHeight, gBuffer.size[1])
-      .with(BlockSize, blockDim)
-      .with(WhiteNoiseBufferSize, whiteNoiseBufferSize),
+      .with(BlockSize, blockDim),
     // ---
     externalLayouts: [auxBindGroupLayout],
   });

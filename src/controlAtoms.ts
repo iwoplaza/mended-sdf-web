@@ -14,6 +14,10 @@ export const cameraOrientationControlAtom = atomWithStorage(
   0,
 );
 
+export const cameraYControlAtom = atomWithStorage('CAMERA_Y', 0);
+
+export const cameraZoomControlAtom = atomWithStorage('CAMERA_ZOOM', 2);
+
 export const autoRotateControlAtom = atomWithStorage('AUTO_ROTATE', true);
 
 export const targetResolutionAtom = atomWithStorage('TARGET_RESOLUTION', 256);

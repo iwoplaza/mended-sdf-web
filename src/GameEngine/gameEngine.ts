@@ -118,6 +118,7 @@ export const GameEngine = (
       // -- Rendering the whole scene & aux.
       if (displayMode === 'traditional' || displayMode === 'blur-diff') {
         traditionalSdfRenderer.perform();
+        runtime.flush();
       }
 
       if (
@@ -126,6 +127,7 @@ export const GameEngine = (
         displayMode === 'mended'
       ) {
         sdfRenderer.perform();
+        runtime.flush();
         // gBufferMeshRenderer.perform(device, commandEncoder);
       }
 

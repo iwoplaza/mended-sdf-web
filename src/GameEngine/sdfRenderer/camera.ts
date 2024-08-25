@@ -6,6 +6,8 @@ import { store } from '@/store';
 import {
   autoRotateControlAtom,
   cameraOrientationControlAtom,
+  cameraYControlAtom,
+  cameraZoomControlAtom,
 } from '@/controlAtoms';
 
 export const CameraStruct = struct({
@@ -40,24 +42,27 @@ export const constructRayDir = wgsl.fn`(coord: vec2f) -> vec3f {
 
 export class Camera {
   update(runtime: TypeGpuRuntime) {
-    const origin = vec3.fromValues(0, 0, 1);
-    const eyePosition = vec3.fromValues(0, 0, 0);
     // const upVector = vec3.fromValues(0, 1, 0);
+
+    const invViewMatrix = mat4.identity();
 
     // const rad = 2.5;
     const rad = store.get(autoRotateControlAtom)
       ? Math.PI * (Date.now() / 5000)
       : (store.get(cameraOrientationControlAtom) / 180) * Math.PI;
-    const rotation = mat4.rotateY(mat4.translation(origin), rad);
-    vec3.transformMat4(eyePosition, rotation, eyePosition);
-
-    const invViewMatrix = mat4.identity();
 
     // transforming the camera
 
-    mat4.translate(invViewMatrix, vec3.fromValues(0, 0, -2), invViewMatrix);
+    const zoom = store.get(cameraZoomControlAtom);
+
     mat4.rotateY(invViewMatrix, rad, invViewMatrix);
-    mat4.translate(invViewMatrix, vec3.fromValues(0, 0, 2), invViewMatrix);
+    mat4.translate(invViewMatrix, vec3.fromValues(0, 0, zoom), invViewMatrix);
+
+    mat4.translate(
+      invViewMatrix,
+      vec3.fromValues(0, store.get(cameraYControlAtom), 0),
+      invViewMatrix,
+    );
 
     // calculating the 'regular' view matrix
 

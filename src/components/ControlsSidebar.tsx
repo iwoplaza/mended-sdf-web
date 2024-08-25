@@ -1,5 +1,12 @@
-import { useCallback } from 'react';
-import { useAtom, useSetAtom } from 'jotai';
+import { useCallback, useId } from 'react';
+import {
+  type SetStateAction,
+  useAtom,
+  useSetAtom,
+  type WritableAtom,
+} from 'jotai';
+import type { RESET } from 'jotai/utils';
+import type { SliderProps } from '@radix-ui/react-slider';
 import type { CheckedState } from '@radix-ui/react-checkbox';
 import { Card, CardContent, CardFooter, CardHeader } from './ui/card';
 import { Checkbox } from './ui/checkbox';
@@ -19,6 +26,8 @@ import {
   autoRotateControlAtom,
   cameraOrientationControlAtom,
   targetResolutionAtom,
+  cameraYControlAtom,
+  cameraZoomControlAtom,
 } from '@/controlAtoms';
 import { accumulatedLayersAtom } from '@/GameEngine/sdfRenderer/sdfRenderer';
 
@@ -30,31 +39,39 @@ function ControlLabel(props: { htmlFor: string; children: string }) {
   );
 }
 
-function CameraOrientationControl() {
-  const [cameraOrientation, setCameraOrientation] = useAtom(
-    cameraOrientationControlAtom,
-  );
+function SliderControl(
+  props: {
+    label: string;
+    valueAtom: WritableAtom<
+      number,
+      [SetStateAction<number | typeof RESET>],
+      void
+    >;
+  } & SliderProps,
+) {
+  const { label, valueAtom, ...rest } = props;
+
+  const id = useId();
+  const [value, setValue] = useAtom(valueAtom);
   const setAccumulatedLayers = useSetAtom(accumulatedLayersAtom);
 
   const onValueChange = useCallback(
     (values: number[]) => {
-      setCameraOrientation(values[0]);
+      setValue(values[0]);
       setAccumulatedLayers(0);
     },
-    [setCameraOrientation, setAccumulatedLayers],
+    [setValue, setAccumulatedLayers],
   );
 
   return (
     <>
-      <ControlLabel htmlFor="camera-orientation">
-        Camera orientation
-      </ControlLabel>
+      <ControlLabel htmlFor={id}>{label}</ControlLabel>
       <Slider
-        value={[cameraOrientation]}
+        {...rest}
+        value={[value]}
         onValueChange={onValueChange}
         className="justify-self-start"
-        id="camera-orientation"
-        max={360}
+        id={id}
       />
     </>
   );
@@ -139,6 +156,7 @@ function TargetResolutionControl() {
           <SelectItem value={'256'}>256x256</SelectItem>
           <SelectItem value={'512'}>512x512</SelectItem>
           <SelectItem value={'1024'}>1024x1024</SelectItem>
+          <SelectItem value={'2048'}>2048x2048</SelectItem>
         </SelectContent>
       </Select>
     </>
@@ -153,7 +171,25 @@ export function ControlsSidebar() {
       </CardHeader>
       <CardContent className="grow">
         <div className="grid grid-cols-[1fr,auto] gap-y-2 gap-x-4 justify-items-end place-items-center">
-          <CameraOrientationControl />
+          <SliderControl
+            label="Camera orientation"
+            valueAtom={cameraOrientationControlAtom}
+            max={360}
+          />
+          <SliderControl
+            label="Camera Y"
+            valueAtom={cameraYControlAtom}
+            min={-1}
+            step={0.01}
+            max={1}
+          />
+          <SliderControl
+            label="Camera Zoom"
+            valueAtom={cameraZoomControlAtom}
+            min={1}
+            step={0.01}
+            max={4}
+          />
           <AutoRotateControl />
           <DisplayModeControl />
           <TargetResolutionControl />

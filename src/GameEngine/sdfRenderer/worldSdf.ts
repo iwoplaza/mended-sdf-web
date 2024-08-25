@@ -27,12 +27,11 @@ export const Material = struct({
 });
 
 export const surfaceDist = wgsl.fn`(ctx: ${ShapeContext}) -> f32 {
-  let dist_from_camera = ctx.ray_distance;
-  return dist_from_camera / ${RenderTargetHeight} * 0.01;
+  return 0.001;
 }`;
 
 const objLeftBlob = wgsl.fn`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(-0.3, -0.2, -2.), 0.2);
+  return ${sdf.sphere}(pos, vec3(-0.3, -0.2, 0.), 0.2);
 }`.$name('obj_left_blob');
 
 // ANIMATED LIGHT
@@ -41,11 +40,11 @@ const objLeftBlob = wgsl.fn`(pos: vec3f) -> f32 {
 // }`.$name('obj_center_blob');
 
 const objCenterBlob = wgsl.fn`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(-0.3, 0.4, -2.), 0.2);
+  return ${sdf.sphere}(pos, vec3(-0.3, 0.4, 0.4), 0.2);
 }`.$name('obj_center_blob');
 
 const objRightBlob = wgsl.fn`(pos: vec3f) -> f32 {
-  return ${sdf.sphere}(pos, vec3(0.4, 0.2, -2.), 0.4);
+  return ${sdf.sphere}(pos, vec3(0.4, 0.2, 0.), 0.4);
 }`;
 
 const objFloor = wgsl.fn`(pos: vec3f) -> f32 {
@@ -108,7 +107,7 @@ export const worldMat =
   }
   else if (d_center_blob <= sd) {
     // test light
-    (*out).albedo = vec3f(1., 1., 1.) * 20.;
+    (*out).albedo = vec3f(1., 1., 0.5) * 20.;
     (*out).emissive = true;
   }
   else if (d_right_blob <= sd) {

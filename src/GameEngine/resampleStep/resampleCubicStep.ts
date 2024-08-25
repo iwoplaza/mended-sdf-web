@@ -194,30 +194,32 @@ export const ResampleStep = ({
     e_y: [0, 1 / sourceSize[1]] as [number, number],
   };
 
-  const externalBindGroup = runtime.device.createBindGroup({
-    layout: externalBindGroupLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: wrappingSampler,
-      },
-      {
-        binding: 1,
-        resource: clampingSampler,
-      },
-      {
-        binding: 2,
-        resource: sourceTexture(),
-      },
-      {
-        binding: 3,
-        resource: hgLookupTexture.createView(),
-      },
-    ],
-  });
+  const hgLookupView = hgLookupTexture.createView();
 
   return {
     perform() {
+      const externalBindGroup = runtime.device.createBindGroup({
+        layout: externalBindGroupLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: wrappingSampler,
+          },
+          {
+            binding: 1,
+            resource: clampingSampler,
+          },
+          {
+            binding: 2,
+            resource: sourceTexture(),
+          },
+          {
+            binding: 3,
+            resource: hgLookupView,
+          },
+        ],
+      });
+
       runtime.writeBuffer(canvasBuffer, canvas);
       pipeline.execute({
         vertexCount: 6,
