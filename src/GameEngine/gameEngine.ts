@@ -123,19 +123,26 @@ export const GameEngine = (
 
       if (
         displayMode === 'g-buffer' ||
+        displayMode === 'g-buffer-color' ||
+        displayMode === 'g-buffer-albedo' ||
+        displayMode === 'g-buffer-normal' ||
         displayMode === 'blur-diff' ||
         displayMode === 'mended'
       ) {
         sdfRenderer.perform();
         runtime.flush();
-        // gBufferMeshRenderer.perform(device, commandEncoder);
       }
 
       // -- Upscaling the quarter-resolution render.
       upscaleStep.perform();
 
       // -- Displaying a result to the screen.
-      if (displayMode === 'g-buffer') {
+      if (
+        displayMode === 'g-buffer' ||
+        displayMode === 'g-buffer-color' ||
+        displayMode === 'g-buffer-albedo' ||
+        displayMode === 'g-buffer-normal'
+      ) {
         gBufferDebugger.perform(context);
       } else if (displayMode === 'traditional') {
         postProcessing.perform();

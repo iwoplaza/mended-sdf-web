@@ -1,10 +1,11 @@
 import { mat4, vec3 } from 'wgpu-matrix';
 import { wgsl, type TypeGpuRuntime } from 'typegpu';
-import { mat4f, struct } from 'typegpu/data';
+import { f32, mat4f, struct } from 'typegpu/data';
 import { RenderTargetHeight, RenderTargetWidth } from './worldSdf';
 import { store } from '@/store';
 import {
   autoRotateControlAtom,
+  cameraFovControlAtom,
   cameraOrientationControlAtom,
   cameraYControlAtom,
   cameraZoomControlAtom,
@@ -13,6 +14,7 @@ import {
 export const CameraStruct = struct({
   view_matrix: mat4f,
   inv_view_matrix: mat4f,
+  field_of_view: f32,
 }).$name('CameraStruct');
 
 export const cameraBuffer = wgsl
@@ -28,11 +30,12 @@ export const constructRayPos = wgsl.fn`() -> vec3f {
 
 export const constructRayDir = wgsl.fn`(coord: vec2f) -> vec3f {
   let viewport_size = vec2f(${RenderTargetWidth}, ${RenderTargetHeight});
-  var view_coords = (coord - viewport_size / 2.) / ${RenderTargetHeight};
+  var view_coords = (coord - viewport_size / 2.) / ${RenderTargetHeight}; // y in [-0.5, 0.5]
+  view_coords = view_coords * ${cameraUniform}.field_of_view;
 
   var view_ray_dir = vec3f(
     view_coords,
-    -1.,
+    -0.5,
   );
   view_ray_dir.y *= -1.;
   view_ray_dir = normalize(view_ray_dir);
@@ -68,10 +71,13 @@ export class Camera {
 
     const viewMatrix = mat4.inverse(invViewMatrix);
 
+    const fovAngle = (store.get(cameraFovControlAtom) / 180) * Math.PI;
+
     // Writing to buffer
     runtime.writeBuffer(cameraBuffer, {
       view_matrix: [...viewMatrix.values()],
       inv_view_matrix: [...invViewMatrix.values()],
+      field_of_view: Math.tan(fovAngle / 2),
     });
   }
 }

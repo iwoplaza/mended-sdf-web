@@ -243,8 +243,8 @@ const auxComputeFn = wgsl.fn`(LocalInvocationID: vec3<u32>, GlobalInvocationID: 
   var albedo_luminance = ${convertRgbToY}(mat_color);
   var emission_luminance = 0.;
   if (material.emissive) {
-    albedo_luminance = 0.3;
-    emission_luminance = albedo_luminance;
+    // albedo_luminance = 0.3;
+    // emission_luminance = albedo_luminance;
   }
 
   let view_normal = ${cameraUniform}.view_matrix * vec4f(world_normal, 0);

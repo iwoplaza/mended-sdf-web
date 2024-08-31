@@ -1,7 +1,9 @@
 import { builtin, wgsl, type TypeGpuRuntime } from 'typegpu';
 
 import type { GBuffer } from '../gBuffer';
-import { vec2i } from 'typegpu/data';
+import { i32, vec2i } from 'typegpu/data';
+import { store } from '@/store';
+import { displayModeAtom } from '@/controlAtoms';
 
 const canvasSizeBuffer = wgsl
   .buffer(vec2i)
@@ -9,8 +11,19 @@ const canvasSizeBuffer = wgsl
   .$allowUniform();
 const canvasSizeUniform = canvasSizeBuffer.asUniform();
 
+const CHANNEL_SPLIT = 0;
+const CHANNEL_COLOR = 1;
+const CHANNEL_ALBEDO = 2;
+const CHANNEL_NORMAL = 3;
+
+const channelModeBuffer = wgsl
+  .buffer(i32, CHANNEL_SPLIT)
+  .$name('channel_mode')
+  .$allowUniform();
+
 const mainFragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
   let coord = vec2<i32>(floor(coord_f.xy));
+  let channel_mode = ${channelModeBuffer.asUniform()};
 
   let blurred = textureLoad(
     blurredTex,
@@ -24,23 +37,46 @@ const mainFragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
     0
   );
 
+  let normal = vec4(
+    (aux.x + 1.0) * 0.5, // normal.x
+    (aux.y + 1.0) * 0.5, // normal.y
+    0.5,
+    1.0,
+  );
+
   var result: vec4<f32>;
 
   let c = coord_f.xy / vec2<f32>(${canvasSizeUniform});
-  // let c = coord.xy / vec2<f32>(512, 512);
-  if (c.x < 0.33) {
-    // NORMALS
+  if (channel_mode == ${CHANNEL_SPLIT}) {
+    if (c.x < 0.33) {
+      // NORMALS
+      result = normal;
+    }
+    else if (c.x < 0.66) {
+      // ALBEDO_LUMI
 
+      let albedo = aux.z;
+      result = vec4(
+        albedo,
+        albedo,
+        albedo,
+        1.0,
+      );
+    }
+    else {
+      // COLOR
+
+      result = vec4(
+        blurred.rgb,
+        1.0,
+      );
+    }
+  } else if (channel_mode == ${CHANNEL_COLOR}) {
     result = vec4(
-      (aux.x + 1.0) * 0.5, // normal.x
-      (aux.y + 1.0) * 0.5, // normal.y
-      0.5,
+      blurred.rgb,
       1.0,
     );
-  }
-  else if (c.x < 0.66) {
-    // ALBEDO_LUMI
-
+  } else if (channel_mode == ${CHANNEL_ALBEDO}) {
     let albedo = aux.z;
     result = vec4(
       albedo,
@@ -48,26 +84,8 @@ const mainFragFn = wgsl.fn`(coord_f: vec4f) -> vec4f {
       albedo,
       1.0,
     );
-  }
-  /*
-  else if (c.x < 0.75) {
-    // EMISSION_LUMI
-
-    let emission = aux.w;
-    result = vec4(
-      emission,
-      emission,
-      emission,
-      1.0,
-    );
-  }*/
-  else {
-    // BLURRED
-
-    result = vec4(
-      blurred.rgb,
-      1.0,
-    );
+  } else if (channel_mode == ${CHANNEL_NORMAL}) {
+    result = normal;
   }
 
   return result;
@@ -168,6 +186,18 @@ export function makeGBufferDebugger(
     perform(ctx: GPUCanvasContext) {
       const textureView = ctx.getCurrentTexture().createView();
       passColorAttachment.view = textureView;
+
+      const mode = store.get(displayModeAtom);
+      let channelMode = CHANNEL_SPLIT;
+      if (mode === 'g-buffer-color') {
+        channelMode = CHANNEL_COLOR;
+      } else if (mode === 'g-buffer-albedo') {
+        channelMode = CHANNEL_ALBEDO;
+      } else if (mode === 'g-buffer-normal') {
+        channelMode = CHANNEL_NORMAL;
+      }
+
+      runtime.writeBuffer(channelModeBuffer, channelMode);
 
       pipeline.execute({
         vertexCount: 6,

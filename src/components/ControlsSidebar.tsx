@@ -28,6 +28,7 @@ import {
   targetResolutionAtom,
   cameraYControlAtom,
   cameraZoomControlAtom,
+  cameraFovControlAtom,
 } from '@/controlAtoms';
 import { accumulatedLayersAtom } from '@/GameEngine/sdfRenderer/sdfRenderer';
 
@@ -66,13 +67,16 @@ function SliderControl(
   return (
     <>
       <ControlLabel htmlFor={id}>{label}</ControlLabel>
-      <Slider
-        {...rest}
-        value={[value]}
-        onValueChange={onValueChange}
-        className="justify-self-start"
-        id={id}
-      />
+      <div className="justify-self-stretch gap-2 flex">
+        <Slider
+          {...rest}
+          value={[value]}
+          onValueChange={onValueChange}
+          className="grow"
+          id={id}
+        />
+        <p className="min-w-12 text-right">{value}</p>
+      </div>
     </>
   );
 }
@@ -179,7 +183,7 @@ export function ControlsSidebar() {
           <SliderControl
             label="Camera Y"
             valueAtom={cameraYControlAtom}
-            min={-1}
+            min={-0.2}
             step={0.01}
             max={1}
           />
@@ -189,6 +193,13 @@ export function ControlsSidebar() {
             min={1}
             step={0.01}
             max={4}
+          />
+          <SliderControl
+            label="Camera FOV"
+            valueAtom={cameraFovControlAtom}
+            min={20}
+            step={1}
+            max={170}
           />
           <AutoRotateControl />
           <DisplayModeControl />
