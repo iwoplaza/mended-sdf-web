@@ -12,6 +12,11 @@ export const DisplayModes = [
 
 export type DisplayMode = (typeof DisplayModes)[number]['key'];
 
+export const measurePerformanceAtom = atomWithStorage(
+  'MEASURE_PERFORMANCE',
+  false,
+);
+
 export const cameraOrientationControlAtom = atomWithStorage(
   'CAMERA_ORIENTATION',
   0,

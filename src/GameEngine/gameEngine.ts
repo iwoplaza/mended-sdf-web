@@ -3,12 +3,18 @@ import type { SetStateAction } from 'jotai';
 import { store } from '../store';
 import { GBuffer } from '../gBuffer';
 import { MenderStep } from '../menderStep';
-import { autoRotateControlAtom, displayModeAtom } from '../controlAtoms';
+import {
+  autoRotateControlAtom,
+  type DisplayMode,
+  displayModeAtom,
+  measurePerformanceAtom,
+} from '../controlAtoms';
 import { makeGBufferDebugger } from './gBufferDebugger';
 import { PostProcessingStep } from './postProcessingStep';
 import { ResampleStep } from './resampleStep/resampleCubicStep';
 import { accumulatedLayersAtom, SDFRenderer } from './sdfRenderer/sdfRenderer';
 import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
+import { PerformanceManager } from '@/PerformanceManager';
 
 class AlreadyDestroyedError extends Error {
   constructor() {
@@ -18,6 +24,27 @@ class AlreadyDestroyedError extends Error {
     Object.setPrototypeOf(this, AlreadyDestroyedError.prototype);
   }
 }
+
+const modeToPerf = new Map<DisplayMode, PerformanceManager>();
+// biome-ignore lint/suspicious/noExplicitAny: <hack>
+(window as any).modeToPerf = modeToPerf;
+
+const noteFrame = () => {
+  if (!store.get(measurePerformanceAtom)) {
+    // Only measuring performance when toggled.
+    return;
+  }
+
+  const mode = store.get(displayModeAtom);
+
+  let perf = modeToPerf.get(mode);
+  if (!perf) {
+    perf = new PerformanceManager();
+    modeToPerf.set(mode, perf);
+  }
+
+  perf.noteFrame();
+};
 
 export const GameEngine = (
   canvas: HTMLCanvasElement,
@@ -112,6 +139,8 @@ export const GameEngine = (
       if (destroyed) {
         return;
       }
+
+      noteFrame();
 
       const displayMode = store.get(displayModeAtom);
 

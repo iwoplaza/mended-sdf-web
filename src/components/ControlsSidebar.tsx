@@ -29,6 +29,7 @@ import {
   cameraYControlAtom,
   cameraZoomControlAtom,
   cameraFovControlAtom,
+  measurePerformanceAtom,
 } from '@/controlAtoms';
 import { accumulatedLayersAtom } from '@/GameEngine/sdfRenderer/sdfRenderer';
 
@@ -81,26 +82,34 @@ function SliderControl(
   );
 }
 
-function AutoRotateControl() {
-  const [autoRotateControl, setAutoRotateControl] = useAtom(
-    autoRotateControlAtom,
-  );
+function CheckboxControl(props: {
+  label: string;
+  valueAtom: WritableAtom<
+    boolean,
+    [SetStateAction<boolean | typeof RESET>],
+    void
+  >;
+}) {
+  const { label, valueAtom } = props;
+
+  const id = useId();
+  const [checked, setChecked] = useAtom(valueAtom);
 
   const onCheckedChange = useCallback(
     (e: CheckedState) => {
-      setAutoRotateControl(e === true);
+      setChecked(e === true);
     },
-    [setAutoRotateControl],
+    [setChecked],
   );
 
   return (
     <>
-      <ControlLabel htmlFor="auto-rotate-camera">Auto rotate</ControlLabel>
+      <ControlLabel htmlFor={id}>{label}</ControlLabel>
       <Checkbox
-        checked={autoRotateControl}
+        checked={checked}
         onCheckedChange={onCheckedChange}
         className="justify-self-start"
-        id="auto-rotate-camera"
+        id="id"
       />
     </>
   );
@@ -201,9 +210,16 @@ export function ControlsSidebar() {
             step={1}
             max={170}
           />
-          <AutoRotateControl />
+          <CheckboxControl
+            label="Auto rotate"
+            valueAtom={autoRotateControlAtom}
+          />
           <DisplayModeControl />
           <TargetResolutionControl />
+          <CheckboxControl
+            label="Measure performance"
+            valueAtom={measurePerformanceAtom}
+          />
         </div>
       </CardContent>
       <CardFooter className="grow-0 shrink">© Iwo Plaza 2024.</CardFooter>
