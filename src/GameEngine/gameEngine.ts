@@ -5,9 +5,9 @@ import { GBuffer } from '../gBuffer';
 import { MenderStep } from '../menderStep';
 import {
   autoRotateControlAtom,
-  type DisplayMode,
   displayModeAtom,
   measurePerformanceAtom,
+  targetResolutionAtom,
 } from '../controlAtoms';
 import { makeGBufferDebugger } from './gBufferDebugger';
 import { PostProcessingStep } from './postProcessingStep';
@@ -25,9 +25,9 @@ class AlreadyDestroyedError extends Error {
   }
 }
 
-const modeToPerf = new Map<DisplayMode, PerformanceManager>();
+const settingsToPerf = new Map<string, PerformanceManager>();
 // biome-ignore lint/suspicious/noExplicitAny: <hack>
-(window as any).modeToPerf = modeToPerf;
+(window as any).settingsToPerf = settingsToPerf;
 
 const noteFrame = () => {
   if (!store.get(measurePerformanceAtom)) {
@@ -36,11 +36,13 @@ const noteFrame = () => {
   }
 
   const mode = store.get(displayModeAtom);
+  const targetResolution = store.get(targetResolutionAtom);
 
-  let perf = modeToPerf.get(mode);
+  const key = `${mode} ${targetResolution}`;
+  let perf = settingsToPerf.get(key);
   if (!perf) {
     perf = new PerformanceManager();
-    modeToPerf.set(mode, perf);
+    settingsToPerf.set(key, perf);
   }
 
   perf.noteFrame();

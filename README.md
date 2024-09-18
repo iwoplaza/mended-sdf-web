@@ -1,6 +1,8 @@
-# Mended SDF Web
+# Mender Visualizer App
 
-TODO:
+## Setup
 
-- [ ] Consider adding `benny` for benchmarking.
-- [ ] Investigate padding during convolution.
+- Install Node.js
+- Install pnpm
+- Run `pnpm install` to install all dependencies
+- Run `pnpm dev` to run the development server, making the web app available via the web browser.

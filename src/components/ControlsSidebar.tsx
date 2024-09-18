@@ -167,8 +167,12 @@ function TargetResolutionControl() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={'256'}>256x256</SelectItem>
+          <SelectItem value={'360'}>360x360</SelectItem>
+          <SelectItem value={'480'}>480x480</SelectItem>
           <SelectItem value={'512'}>512x512</SelectItem>
+          <SelectItem value={'750'}>750x750</SelectItem>
           <SelectItem value={'1024'}>1024x1024</SelectItem>
+          <SelectItem value={'1600'}>1600x1600</SelectItem>
           <SelectItem value={'2048'}>2048x2048</SelectItem>
         </SelectContent>
       </Select>
