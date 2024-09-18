@@ -102,7 +102,7 @@ export const worldMat =
 
   if (d_left_blob <= sd) {
     // left blob
-    (*out).albedo = vec3f(1., 0.2, 0.2);
+    (*out).albedo = vec3f(0.2, 0.2, 1.);
     (*out).roughness = 0.95;
   }
   else if (d_center_blob <= sd) {

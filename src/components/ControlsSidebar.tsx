@@ -184,7 +184,7 @@ export function ControlsSidebar() {
   return (
     <Card className="m-4 flex flex-col">
       <CardHeader>
-        <img className="h-12" src="/mender-logo-light.svg" alt="Mender Logo" />
+        <img className="h-12" src="/thoure-logo-light.svg" alt="thoure logo" />
       </CardHeader>
       <CardContent className="grow">
         <div className="grid grid-cols-[1fr,auto] gap-y-2 gap-x-4 justify-items-end place-items-center">
@@ -226,7 +226,7 @@ export function ControlsSidebar() {
           />
         </div>
       </CardContent>
-      <CardFooter className="grow-0 shrink">© Iwo Plaza 2024.</CardFooter>
+      <CardFooter className="grow-0 shrink">© Iwo Plaza 2024</CardFooter>
     </Card>
   );
 }
