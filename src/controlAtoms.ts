@@ -1,13 +1,12 @@
 import { atomWithStorage } from 'jotai/utils';
 
 export const DisplayModes = [
-  { key: 'mended', label: 'Mended' },
+  { key: 'upscaled', label: 'Upscaled' },
   { key: 'traditional', label: 'Traditional' },
-  { key: 'g-buffer', label: 'G-Buffer Split View' },
+  { key: 'g-buffer', label: 'G-Buffer - Split view' },
   { key: 'g-buffer-color', label: 'G-Buffer - Color' },
   { key: 'g-buffer-albedo', label: 'G-Buffer - Albedo' },
   { key: 'g-buffer-normal', label: 'G-Buffer - Normal' },
-  { key: 'blur-diff', label: 'Blur Diff' },
 ] as const;
 
 export type DisplayMode = (typeof DisplayModes)[number]['key'];
@@ -34,5 +33,5 @@ export const targetResolutionAtom = atomWithStorage('TARGET_RESOLUTION', 256);
 
 export const displayModeAtom = atomWithStorage<DisplayMode>(
   'DISPLAY_MODE',
-  'mended',
+  'upscaled',
 );

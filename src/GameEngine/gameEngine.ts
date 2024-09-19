@@ -13,7 +13,6 @@ import { makeGBufferDebugger } from './gBufferDebugger';
 import { PostProcessingStep } from './postProcessingStep';
 import { ResampleStep } from './resampleStep/resampleCubicStep';
 import { accumulatedLayersAtom, SDFRenderer } from './sdfRenderer/sdfRenderer';
-import { BlipDifferenceStep } from './blipDifferenceStep/blipDifferenceStep';
 import { PerformanceManager } from '@/PerformanceManager';
 
 class AlreadyDestroyedError extends Error {
@@ -118,19 +117,6 @@ export const GameEngine = (
       presentationFormat,
     });
 
-    let blipDifference: ReturnType<typeof BlipDifferenceStep>;
-    try {
-      blipDifference = BlipDifferenceStep({
-        runtime,
-        context,
-        presentationFormat,
-        textures: [() => gBuffer.upscaledView, () => gBuffer.outRawRenderView],
-      });
-    } catch (err) {
-      console.error('Failed to init BlipDifferenceStep');
-      throw err;
-    }
-
     context.configure({
       device: runtime.device,
       format: presentationFormat,
@@ -147,7 +133,7 @@ export const GameEngine = (
       const displayMode = store.get(displayModeAtom);
 
       // -- Rendering the whole scene & aux.
-      if (displayMode === 'traditional' || displayMode === 'blur-diff') {
+      if (displayMode === 'traditional') {
         traditionalSdfRenderer.perform();
         runtime.flush();
       }
@@ -157,8 +143,7 @@ export const GameEngine = (
         displayMode === 'g-buffer-color' ||
         displayMode === 'g-buffer-albedo' ||
         displayMode === 'g-buffer-normal' ||
-        displayMode === 'blur-diff' ||
-        displayMode === 'mended'
+        displayMode === 'upscaled'
       ) {
         sdfRenderer.perform();
         runtime.flush();
@@ -177,12 +162,10 @@ export const GameEngine = (
         gBufferDebugger.perform(context);
       } else if (displayMode === 'traditional') {
         postProcessing.perform();
-      } else if (displayMode === 'mended') {
+      } else if (displayMode === 'upscaled') {
         // -- Restoring quality to the render using convolution.
         menderStep.perform();
         postProcessing.perform();
-      } else if (displayMode === 'blur-diff') {
-        blipDifference.perform();
       }
 
       runtime.flush();

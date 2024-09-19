@@ -29,7 +29,6 @@ import {
   cameraYControlAtom,
   cameraZoomControlAtom,
   cameraFovControlAtom,
-  measurePerformanceAtom,
 } from '@/controlAtoms';
 import { accumulatedLayersAtom } from '@/GameEngine/sdfRenderer/sdfRenderer';
 
@@ -182,12 +181,23 @@ function TargetResolutionControl() {
 
 export function ControlsSidebar() {
   return (
-    <Card className="m-4 flex flex-col">
+    <Card className="m-4 flex flex-col max-w-96">
       <CardHeader>
-        <img className="h-12" src="/thoure-logo-light.svg" alt="thoure logo" />
+        <img className="h-12" src="/phoure-logo-light.svg" alt="thoure logo" />
+        <h1 className="hidden">thoure</h1>
+        <h2 className="font-poppins text-xs text-center text-slate-700">
+          Ethical AI upscaling for games.
+        </h2>
       </CardHeader>
       <CardContent className="grow">
+        <p className="text-sm text-justify mt-3 mb-10">
+          The goal of <strong>phoure</strong> is to be an upscaling solution
+          that does not infringe on the rights of artists. Try it out in this
+          live demo.
+        </p>
         <div className="grid grid-cols-[1fr,auto] gap-y-2 gap-x-4 justify-items-end place-items-center">
+          <DisplayModeControl />
+          <TargetResolutionControl />
           <SliderControl
             label="Camera orientation"
             valueAtom={cameraOrientationControlAtom}
@@ -218,15 +228,22 @@ export function ControlsSidebar() {
             label="Auto rotate"
             valueAtom={autoRotateControlAtom}
           />
-          <DisplayModeControl />
-          <TargetResolutionControl />
-          <CheckboxControl
+          {/* <CheckboxControl
             label="Measure performance"
             valueAtom={measurePerformanceAtom}
-          />
+          /> */}
         </div>
       </CardContent>
-      <CardFooter className="grow-0 shrink">© Iwo Plaza 2024</CardFooter>
+      <CardFooter className="grow-0 shrink flex justify-between items-center text-slate-500">
+        <span className="text-sm">© Iwo Plaza 2024</span>
+        <a
+          href="https://github.com/iwoplaza/phoure"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          <img src="/github-icon.svg" alt="GitHub logo" />
+        </a>
+      </CardFooter>
     </Card>
   );
 }

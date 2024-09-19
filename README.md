@@ -1,7 +1,7 @@
 <div align="center">
 
-![typed binary (light mode)](/public/thoure-logo-light.svg#gh-light-mode-only)
-![typed binary (dark mode)](/public/thoure-logo-dark.svg#gh-dark-mode-only)
+![phoure (light mode)](/public/phoure-logo-light.svg#gh-light-mode-only)
+![phoure (dark mode)](/public/phoure-logo-dark.svg#gh-dark-mode-only)
 
 Ethical AI upscaling for games. _(formerly "mender")_
 
@@ -10,7 +10,7 @@ Ethical AI upscaling for games. _(formerly "mender")_
 <div align="center">
 <div style="max-width: 640px">
 
-![hello](/public/thoure-app.png)
+![hello](/public/phoure-app.png)
 
 </div>
 </div>
@@ -23,6 +23,16 @@ For the renderer implemented in the official example, it produces a $2024\times2
 ## Ethical?
 
 The dataset that was used to train the upscaling neural network was generated with Blender's Geometry Nodes. **No artist's work was used in the process**.
+
+## Roadmap
+
+- [x] Generate procedural data-set with Blender Geometry Nodes.
+- [x] Create a slim network architecture.
+- [x] Train the network.
+- [x] Create ray marching renderer (for SDFs).
+- [x] Implement inference on the WebGPU.
+- [ ] Extract into a separate package, to be used as an upscaling step in other WebGPU projects.
+- [ ] Create rasterizing renderer (polygonal geometry).
 
 ## Development
 
